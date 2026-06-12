@@ -1,0 +1,38 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "009_E2_ethyl_Cl_OH_minus1",
+  "legacy_sample_name": "E2_ethyl_chloride_OH_minus",
+  "display_name": "Ethyl chloride + OH- E2 elimination",
+  "description": "Anionic E2 elimination sample with separated product-like endpoint geometry.",
+  "formula": "C2H6ClO-",
+  "molecular_weight": 81.5214,
+  "charge": -1,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Anionic elimination reaction-path test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "small",
+  "ui_note": "Anionic sample. Set charge = -1.",
+  "tags": [
+    "E2",
+    "elimination",
+    "charged",
+    "anion",
+    "closed_shell"
+  ],
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "no_curated_deltaG_activation",
+  "reference_values": [],
+  "notes": [
+    "Atom 7 is the beta hydrogen transferred to hydroxide in the product geometry.",
+    "This is an intentionally simple anionic elimination test and may need endpoint optimization before production use.",
+    "The closely related F- + C2H5Cl SN2/E2 competition has literature data, but this hydroxide/chloride sample has no curated value in this patch.",
+    "The formal charge is included in the sample name suffix and repeated in this JSON for UI validation."
+  ]
+}

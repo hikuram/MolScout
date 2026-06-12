@@ -1,0 +1,25 @@
+services:
+  molscout:
+    build:
+      dockerfile: Dockerfile
+      args:
+        - CACHE_BUST=${CACHE_BUST:-1}
+    container_name: molscout_app
+    init: true
+    restart: always
+    environment:
+      TZ: Asia/Tokyo
+    ports:
+      - "8501:8501"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    volumes:
+      - ./app/data:/opt/MolScout/app/data
+      #- ./app/.streamlit/:/opt/MolScout/app/.streamlit
+      #- /etc/certificate:/etc/certificate
+    command: ["streamlit", "run", "/opt/MolScout/app/streamlit_app.py"]

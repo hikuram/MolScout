@@ -1,0 +1,85 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "001_HCN_HNC_isomerization",
+  "legacy_sample_name": "HCN_HNC",
+  "display_name": "HCN to HNC isomerization",
+  "description": "Minimal neutral isomerization sample for quick reaction-path and TS-search checks.",
+  "formula": "HCN",
+  "molecular_weight": 27.0253,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Quick small-molecule isomerization TS-search test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "tiny",
+  "ui_note": null,
+  "tags": [
+    "isomerization",
+    "neutral",
+    "closed_shell",
+    "small_molecule"
+  ],
+  "curation_status": "curated_reference_metadata",
+  "reference_value_status": "barrier_height_found_no_deltaG",
+  "recommended_reference_value_id": "khalouf_rivera_2019_makhnev_hcn_barrier",
+  "reference_values": [
+    {
+      "id": "khalouf_rivera_2019_makhnev_hcn_barrier",
+      "quantity": "isomerization_barrier_height",
+      "value": 16809.4,
+      "unit": "cm^-1",
+      "value_kcal_mol": 48.06,
+      "direction": "HCN_to_HNC",
+      "phase": "gas_phase",
+      "temperature_K": null,
+      "standard_state": null,
+      "method": "Spectroscopic/ab initio benchmark value compiled in Table 2, Makhnev et al. column",
+      "source_id": "khalouf_rivera_2019_arxiv",
+      "note": "Not a thermal activation free energy. Use as a barrier-height reference for the HCN minimum."
+    },
+    {
+      "id": "khalouf_rivera_2019_makhnev_hnc_barrier",
+      "quantity": "isomerization_barrier_height",
+      "value": 11496.6,
+      "unit": "cm^-1",
+      "value_kcal_mol": 32.87,
+      "direction": "HNC_to_HCN",
+      "phase": "gas_phase",
+      "temperature_K": null,
+      "standard_state": null,
+      "method": "Spectroscopic/ab initio benchmark value compiled in Table 2, Makhnev et al. column",
+      "source_id": "khalouf_rivera_2019_arxiv",
+      "note": "Not a thermal activation free energy. Included for the reverse direction."
+    },
+    {
+      "id": "khalouf_rivera_2019_baraban_hcn_barrier",
+      "quantity": "isomerization_barrier_height",
+      "value": 16695.0,
+      "uncertainty": 17.0,
+      "unit": "cm^-1",
+      "value_kcal_mol": 47.74,
+      "direction": "HCN_to_HNC",
+      "phase": "gas_phase",
+      "temperature_K": null,
+      "standard_state": null,
+      "method": "Transition-state energy extracted from spectroscopic patterns, Baraban et al. column in Table 2",
+      "source_id": "khalouf_rivera_2019_arxiv",
+      "note": "Alternative literature value listed for comparison."
+    }
+  ],
+  "sources": {
+    "khalouf_rivera_2019_arxiv": {
+      "type": "preprint",
+      "citation": "J. Khalouf-Rivera, M. Carvajal, L. F. Santos, and F. Perez-Bernal, Calculation of Transition State Energies in the HCN-HNC Isomerization with an Algebraic Model, arXiv:1907.07290.",
+      "doi": "10.48550/arXiv.1907.07290",
+      "url": "https://arxiv.org/abs/1907.07290"
+    }
+  },
+  "curation_note": "A true Delta G activation value was not identified in an open source during this pass. The included values are barrier heights, not Gibbs activation free energies."
+}

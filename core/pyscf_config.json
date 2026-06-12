@@ -1,0 +1,71 @@
+{
+  "pyscf": {
+    "xc": "r2scan3c",
+    "ecp": "def2-ECP",
+    "with_df": true,
+    "auxbasis": "def2-universal-jfit",
+    "max_cycle": 200,
+    "with_solvent": true,
+    "solvent_model": "SMD",
+    "solvent": "water",
+    "verbose": 4
+  },
+
+  "pyscf_high": {
+    "xc": "wb97m_v",
+    "basis": "def2-TZVPP",
+    "ecp": "def2-TZVPP",
+    "with_df": true,
+    "auxbasis": "def2-universal-jkfit",
+    "disp": null,
+    "conv_tol": 1e-8,
+    "max_cycle": 200,
+    "grids_level": 6,
+    "nlcgrids_level": 4,
+    "with_solvent": true,
+    "solvent_model": "SMD",
+    "solvent": "water",
+    "verbose": 4
+  },
+
+  "presets": {
+    "L1_fast": {
+      "xc": "b97-3c",
+      "ecp": "def2-ECP",
+      "with_df": true,
+      "auxbasis": "def2-universal-jfit",
+      "max_cycle": 200,
+      "with_solvent": true,
+      "solvent_model": "SMD",
+      "solvent": "water",
+      "verbose": 4
+    },
+    "L2_standard": {
+      "xc": "r2scan3c",
+      "ecp": "def2-ECP",
+      "with_df": true,
+      "auxbasis": "def2-universal-jfit",
+      "max_cycle": 200,
+      "with_solvent": true,
+      "solvent_model": "SMD",
+      "solvent": "water",
+      "verbose": 4
+    },
+    "L3_high": {
+      "xc": "wb97m_v",
+      "basis": "def2-TZVPP",
+      "ecp": "def2-TZVPP",
+      "with_df": true,
+      "auxbasis": "def2-universal-jkfit",
+      "disp": null,
+      "conv_tol": 1e-8,
+      "max_cycle": 200,
+      "grids_level": 6,
+      "nlcgrids_level": 4,
+      "with_solvent": true,
+      "solvent_model": "SMD",
+      "solvent": "water",
+      "verbose": 4
+    }
+  }
+}

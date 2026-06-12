@@ -1,0 +1,61 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "003_ethane_rotation_scan",
+  "legacy_sample_name": "ethane_rotation",
+  "display_name": "Ethane internal rotation",
+  "description": "Minimal staggered-to-eclipsed torsional rotation sample for SCAN smoke tests.",
+  "formula": "C2H6",
+  "molecular_weight": 30.069,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Tiny dihedral SCAN smoke test.",
+  "recommended_initial_path_methods": [
+    "SCAN"
+  ],
+  "difficulty": "tiny",
+  "ui_note": "Recommended for SCAN mode. The product is an eclipsed high-energy conformer.",
+  "tags": [
+    "scan",
+    "dihedral",
+    "conformation",
+    "neutral",
+    "closed_shell"
+  ],
+  "suggested_scan": {
+    "atom_indices_1_based": [
+      3,
+      1,
+      2,
+      6
+    ],
+    "coordinate": "dihedral"
+  },
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "torsional_barrier_not_deltaG_activation",
+  "reference_values": [
+    {
+      "quantity": "internal_rotation_barrier",
+      "value": 2.9,
+      "unit": "kcal/mol",
+      "temperature_K": null,
+      "phase": "gas",
+      "note": "Classic ethane staggered-to-eclipsed torsional barrier; not a thermal DeltaG_activation."
+    }
+  ],
+  "sources": {
+    "pitzer_1945_jcp": {
+      "type": "journal_article",
+      "citation": "K. S. Pitzer, Theory of the Origin of the Internal Rotation Barrier in Ethane, J. Chem. Phys. 1945, 43, S217.",
+      "url": "https://pubs.aip.org/aip/jcp/article/43/10/S217/83410/Theory-of-the-Origin-of-the-Internal-Rotation"
+    }
+  },
+  "notes": [
+    "This is an intentionally tiny SCAN smoke test.",
+    "Product is the eclipsed high-energy conformer rather than a minimum.",
+    "The _scan suffix means SCAN is the preferred initial-path mode, not the only supported mode."
+  ]
+}

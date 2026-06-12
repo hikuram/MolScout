@@ -1,0 +1,37 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "004_H5O2_proton_transfer_plus1",
+  "legacy_sample_name": "H5O2_plus_proton_transfer",
+  "display_name": "Zundel cation proton transfer",
+  "description": "Positive-charge proton-transfer sample based on asymmetric H5O2+ endpoints.",
+  "formula": "H5O2+",
+  "molecular_weight": 37.038,
+  "charge": 1,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Cationic proton-transfer and charge-setting test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "small",
+  "ui_note": "Cationic sample. Set charge = +1.",
+  "tags": [
+    "proton_transfer",
+    "charged",
+    "cation",
+    "closed_shell"
+  ],
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "no_single_curated_deltaG_activation",
+  "reference_values": [],
+  "notes": [
+    "Useful as a positive-charge counterpart to Cl-_CH3F.",
+    "The gas-phase symmetric Zundel cation is a low-barrier proton-transfer system; this file uses displaced bridge-proton endpoints for testing.",
+    "Do not treat the endpoint energy difference as a physical reference without reoptimization and environment definition.",
+    "The formal charge is included in the sample name suffix and repeated in this JSON for UI validation."
+  ]
+}

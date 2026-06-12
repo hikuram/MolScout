@@ -1,0 +1,58 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "013_bi_anthracene_rotation",
+  "legacy_sample_name": "bi_anthracene",
+  "display_name": "9,9'-Bianthracene torsional rotation",
+  "description": "Large aromatic torsional-rotation sample; no curated activation reference is currently attached.",
+  "formula": "C28H18",
+  "molecular_weight": 354.4425,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Large conformational-change and robustness test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "large",
+  "ui_note": null,
+  "tags": [
+    "rotation",
+    "conformation",
+    "aromatic",
+    "neutral",
+    "closed_shell",
+    "large_molecule"
+  ],
+  "curation_status": "curated_reference_metadata",
+  "reference_value_status": "not_found",
+  "recommended_reference_value_id": null,
+  "reference_values": [],
+  "compound_records": [
+    {
+      "id": "nist_webbook_1055_23_8",
+      "name": "9,9'-Bianthracene",
+      "formula": "C28H18",
+      "molecular_weight": 354.4425,
+      "inchi_key": "SXGIRTCIFPJUEQ-UHFFFAOYSA-N",
+      "cas": "1055-23-8",
+      "source_id": "nist_webbook_1055_23_8"
+    }
+  ],
+  "sources": {
+    "nist_webbook_1055_23_8": {
+      "type": "database_record",
+      "citation": "NIST Chemistry WebBook, SRD 69, 9,9'-Bianthracene.",
+      "url": "https://webbook.nist.gov/cgi/cbook.cgi?ID=1055-23-8"
+    },
+    "jglobal_200907009155340956": {
+      "type": "database_record",
+      "citation": "J-GLOBAL substance record for 9,9'-Bianthracene.",
+      "url": "https://jglobal.jst.go.jp/detail?JGLOBAL_ID=200907009155340956"
+    }
+  },
+  "curation_note": "No reliable open activation free energy or torsional barrier for the exact 180-degree rotation sample was identified during this pass. Keep the JSON so the UI can display an explicit data-gap status instead of implying a missing file."
+}

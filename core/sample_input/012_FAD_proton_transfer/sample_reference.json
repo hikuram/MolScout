@@ -1,0 +1,99 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "012_FAD_proton_transfer",
+  "legacy_sample_name": "formic_acid_dimer",
+  "display_name": "Formic acid dimer double proton transfer",
+  "description": "Hydrogen-bonded dimer sample with curated gas-phase and aqueous activation-free-energy references.",
+  "formula": "C2H4O4",
+  "molecular_weight": 92.0508,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Double proton-transfer and activation-free-energy comparison sample.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "medium",
+  "ui_note": null,
+  "tags": [
+    "proton_transfer",
+    "hydrogen_bond",
+    "neutral",
+    "closed_shell"
+  ],
+  "curation_status": "curated_reference_metadata",
+  "reference_value_status": "found",
+  "recommended_reference_value_id": "toepfer_2022_gas_phase_310K_deltaG_act",
+  "reference_values": [
+    {
+      "id": "toepfer_2022_gas_phase_310K_deltaG_act",
+      "quantity": "deltaG_activation",
+      "value": 8.25,
+      "unit": "kcal/mol",
+      "value_kJ_mol": 34.52,
+      "direction": "double_proton_transfer",
+      "phase": "gas_phase",
+      "temperature_K": 310,
+      "standard_state": null,
+      "method": "Biased NVE simulation with ML potential energy surface for formic acid dimer",
+      "source_id": "toepfer_2022_pccp",
+      "note": "This is the closest free-energy activation reference for the isolated dimer found in the open article."
+    },
+    {
+      "id": "toepfer_2022_solution_300K_fluctuating_charge_deltaG_act",
+      "quantity": "deltaG_activation",
+      "value": 7.45,
+      "unit": "kcal/mol",
+      "value_kJ_mol": 31.17,
+      "direction": "double_proton_transfer",
+      "phase": "aqueous_solution",
+      "temperature_K": 300,
+      "standard_state": null,
+      "method": "Biased simulation in water with fluctuating charges on formic acid dimer",
+      "source_id": "toepfer_2022_pccp",
+      "note": "Solution reference; useful only if the MolScout workflow includes comparable solvent treatment."
+    },
+    {
+      "id": "toepfer_2022_solution_300K_fixed_charge_deltaG_act",
+      "quantity": "deltaG_activation",
+      "value": 7.53,
+      "unit": "kcal/mol",
+      "value_kJ_mol": 31.51,
+      "direction": "double_proton_transfer",
+      "phase": "aqueous_solution",
+      "temperature_K": 300,
+      "standard_state": null,
+      "method": "Biased simulation in water with fixed charges on formic acid dimer",
+      "source_id": "toepfer_2022_pccp",
+      "note": "Alternative charge model from the same study."
+    },
+    {
+      "id": "toepfer_2022_potential_barrier_physnet",
+      "quantity": "potential_energy_barrier",
+      "value": 6.7,
+      "unit": "kcal/mol",
+      "value_kJ_mol": 28.03,
+      "direction": "double_proton_transfer",
+      "phase": "gas_phase",
+      "temperature_K": null,
+      "standard_state": null,
+      "method": "PhysNet ML potential energy surface trained to MP2 reference data",
+      "source_id": "toepfer_2022_pccp",
+      "note": "Potential barrier, not Delta G activation."
+    }
+  ],
+  "sources": {
+    "toepfer_2022_pccp": {
+      "type": "journal_article",
+      "citation": "K. Toepfer, S. Kaeser, and M. Meuwly, Double proton transfer in hydrated formic acid dimer: Interplay of spatial symmetry and solvent-generated force on reactivity, Phys. Chem. Chem. Phys. 2022.",
+      "doi": "10.1039/D2CP01583H",
+      "url": "https://doi.org/10.1039/D2CP01583H",
+      "open_url": "https://pubs.rsc.org/en/content/articlehtml/2022/cp/d2cp01583h"
+    }
+  },
+  "curation_note": "The gas-phase free-energy value at 310 K is likely the most relevant value for the existing isolated-dimer sample. Do not compare the aqueous values to a gas-phase calculation."
+}

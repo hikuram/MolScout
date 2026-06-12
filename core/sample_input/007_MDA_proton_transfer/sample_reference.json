@@ -1,0 +1,35 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "007_MDA_proton_transfer",
+  "legacy_sample_name": "malonaldehyde_proton_transfer",
+  "display_name": "Malonaldehyde proton transfer",
+  "description": "Neutral intramolecular proton-transfer sample using approximate planar endpoints.",
+  "formula": "C3H4O2",
+  "molecular_weight": 72.0627,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Neutral proton-transfer path-finding test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "small",
+  "ui_note": null,
+  "tags": [
+    "proton_transfer",
+    "neutral",
+    "closed_shell"
+  ],
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "not_curated_in_this_patch",
+  "reference_values": [],
+  "notes": [
+    "Approximate planar reactant/product geometries for quick MolScout testing.",
+    "Coordinates are rounded and are not intended to be optimized reference structures.",
+    "Add a curated DeltaG_activation value only after selecting a specific literature or database level."
+  ]
+}

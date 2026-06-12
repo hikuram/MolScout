@@ -1,0 +1,39 @@
+"""Shared Streamlit GUI for MolScout remote usage."""
+
+from __future__ import annotations
+
+import streamlit as st
+
+st.set_page_config(
+    page_title="MolScout Remote GUI",
+    page_icon=":material/science:",
+    layout="wide",
+)
+
+from app_core.paths import ensure_app_dirs
+from app_ui.views import ensure_worker_running, inject_css, maybe_run_startup_cleanup
+from app_ui.sidebar import render_sidebar
+
+
+def main() -> None:
+    ensure_app_dirs()
+    maybe_run_startup_cleanup()
+    ensure_worker_running()
+    inject_css()
+
+    render_sidebar()
+
+    page = st.navigation(
+        [
+            st.Page("app_pages/queue.py", title="Queue", icon=":material/lan:"),
+            st.Page("app_pages/submit.py", title="Submit", icon=":material/upload_file:"),
+            st.Page("app_pages/results.py", title="Results", icon=":material/monitoring:"),
+            st.Page("app_pages/pyscf.py", title="PySCF", icon=":material/settings:"),
+            st.Page("app_pages/about.py", title="About", icon=":material/info:"),
+        ],
+        position="top",
+    )
+    page.run()
+
+
+main()

@@ -1,0 +1,103 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "006_Cl_CH3F_SN2_minus1",
+  "legacy_sample_name": "Cl-_CH3F",
+  "display_name": "Cl- + CH3F SN2 substitution",
+  "description": "Anionic SN2 substitution sample with a curated free-energy reference from the literature.",
+  "formula": "CH3ClF-",
+  "molecular_weight": 69.4849,
+  "charge": -1,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Charged SN2 reaction-path and activation-free-energy comparison sample.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "small",
+  "ui_note": "Anionic sample. Set charge = -1.",
+  "tags": [
+    "SN2",
+    "charged",
+    "anion",
+    "substitution",
+    "closed_shell"
+  ],
+  "curation_status": "curated_reference_metadata",
+  "reference_value_status": "found",
+  "recommended_reference_value_id": "piccini_2019_mp2_metafep_forward_deltaF_act_A",
+  "reference_values": [
+    {
+      "id": "piccini_2019_mp2_metafep_forward_deltaF_act_A",
+      "quantity": "deltaF_activation",
+      "value": 126.0,
+      "unit": "kJ/mol",
+      "value_kcal_mol": 30.11,
+      "direction": "reactant_to_product",
+      "phase": "gas_phase_like_model_M1",
+      "temperature_K": 300,
+      "standard_state": null,
+      "method": "MetaFEP free energy surface, MP2/aug-cc-pVTZ energy correction on PM6 metadynamics samples",
+      "source_id": "piccini_2019_jpcl",
+      "note": "Table 1 value Delta F^‡_A for model M1. A corresponds to CH3F + Cl-, B to CH3Cl + F-. The paper reports free energies in kJ/mol."
+    },
+    {
+      "id": "piccini_2019_mp2_ha_forward_deltaF_act_A",
+      "quantity": "deltaF_activation",
+      "value": 120.0,
+      "unit": "kJ/mol",
+      "value_kcal_mol": 28.68,
+      "direction": "reactant_to_product",
+      "phase": "gas_phase_like_model_M1",
+      "temperature_K": 300,
+      "standard_state": null,
+      "method": "Harmonic transition-state approximation, MP2/aug-cc-pVTZ",
+      "source_id": "piccini_2019_jpcl",
+      "note": "Table 1 value Delta F^‡_A for model M1."
+    },
+    {
+      "id": "piccini_2019_mp2_metafep_reverse_deltaF_act_B",
+      "quantity": "deltaF_activation",
+      "value": 28.0,
+      "unit": "kJ/mol",
+      "value_kcal_mol": 6.69,
+      "direction": "product_to_reactant",
+      "phase": "gas_phase_like_model_M1",
+      "temperature_K": 300,
+      "standard_state": null,
+      "method": "MetaFEP free energy surface, MP2/aug-cc-pVTZ energy correction on PM6 metadynamics samples",
+      "source_id": "piccini_2019_jpcl",
+      "note": "Table 1 value Delta F^‡_B for model M1."
+    },
+    {
+      "id": "piccini_2019_mp2_metafep_reaction_deltaF_B_minus_A",
+      "quantity": "deltaF_reaction",
+      "value": 98.0,
+      "unit": "kJ/mol",
+      "value_kcal_mol": 23.42,
+      "direction": "reactant_to_product",
+      "phase": "gas_phase_like_model_M1",
+      "temperature_K": 300,
+      "standard_state": null,
+      "method": "MetaFEP free energy surface, MP2/aug-cc-pVTZ energy correction on PM6 metadynamics samples",
+      "source_id": "piccini_2019_jpcl",
+      "note": "Reaction free energy Delta F_B-A; included because this reaction is strongly endergonic in the sampled direction."
+    }
+  ],
+  "sources": {
+    "piccini_2019_jpcl": {
+      "type": "journal_article",
+      "citation": "G. Piccini and M. Parrinello, Accurate Quantum Chemical Free Energies at Affordable Cost, J. Phys. Chem. Lett. 2019, 10, 3727-3731.",
+      "doi": "10.1021/acs.jpclett.9b01301",
+      "url": "https://doi.org/10.1021/acs.jpclett.9b01301",
+      "open_preprint_url": "https://arxiv.org/abs/1904.02004"
+    }
+  },
+  "curation_note": "This is the closest direct activation-free-energy reference found for the exact MolScout sample reaction. Compare only after matching phase, standard-state convention, and direction.",
+  "notes": [
+    "The formal charge is included in the sample name suffix and repeated in this JSON for UI validation."
+  ]
+}

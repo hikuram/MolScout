@@ -1,0 +1,61 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "002_NH3_ud_inversion",
+  "legacy_sample_name": "NH3_ud",
+  "display_name": "Ammonia umbrella inversion",
+  "description": "Small symmetric umbrella-inversion sample with equivalent reactant and product minima.",
+  "formula": "NH3",
+  "molecular_weight": 17.0305,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Very small inversion-barrier and endpoint-symmetry test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "tiny",
+  "ui_note": null,
+  "tags": [
+    "inversion",
+    "neutral",
+    "closed_shell",
+    "small_molecule"
+  ],
+  "curation_status": "curated_reference_metadata",
+  "reference_value_status": "barrier_height_found_no_deltaG",
+  "recommended_reference_value_id": "blinder_2018_accepted_inversion_barrier",
+  "reference_values": [
+    {
+      "id": "blinder_2018_accepted_inversion_barrier",
+      "quantity": "inversion_barrier_height",
+      "value": 24.2,
+      "unit": "kJ/mol",
+      "value_kcal_mol": 5.78,
+      "direction": "umbrella_inversion",
+      "phase": "gas_phase",
+      "temperature_K": null,
+      "standard_state": null,
+      "method": "Accepted ammonia inversion barrier used in a one-dimensional inversion model; value attributed there to Rauk and Allen, J. Chem. Phys. 1970",
+      "source_id": "blinder_2018_arxiv",
+      "note": "Not a thermal activation free energy. The sample endpoints are equivalent minima, so the same barrier applies in either direction."
+    }
+  ],
+  "sources": {
+    "blinder_2018_arxiv": {
+      "type": "preprint",
+      "citation": "S. M. Blinder, Ammonia Inversion Energy Levels using Operator Algebra, arXiv:1809.08178.",
+      "doi": "10.48550/arXiv.1809.08178",
+      "url": "https://arxiv.org/abs/1809.08178"
+    },
+    "rauk_allen_1970_jcp": {
+      "type": "journal_article",
+      "citation": "A. Rauk and L. C. Allen, Electronic Structure and Inversion Barrier of Ammonia, J. Chem. Phys. 52, 4133-4144 (1970).",
+      "url": "https://pubs.aip.org/aip/jcp/article/52/8/4133/764782/Electronic-Structure-and-Inversion-Barrier-of"
+    }
+  },
+  "curation_note": "A true Delta G activation value was not identified in an open source during this pass. The included value is the conventional inversion barrier height."
+}

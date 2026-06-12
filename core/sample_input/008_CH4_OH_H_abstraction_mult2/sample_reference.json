@@ -1,0 +1,36 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "008_CH4_OH_H_abstraction_mult2",
+  "legacy_sample_name": "CH4_OH_H_abstraction",
+  "display_name": "CH4 + OH hydrogen abstraction",
+  "description": "Open-shell hydrogen-abstraction sample for multiplicity handling.",
+  "formula": "CH5O",
+  "molecular_weight": 33.0498,
+  "charge": 0,
+  "multiplicity": 2,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Open-shell radical reaction-path test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "small",
+  "ui_note": "Open-shell radical sample. Set multiplicity = 2.",
+  "tags": [
+    "hydrogen_abstraction",
+    "radical",
+    "open_shell",
+    "neutral"
+  ],
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "no_curated_deltaG_activation",
+  "reference_values": [],
+  "notes": [
+    "Open-shell doublet sample for multiplicity handling.",
+    "Atom 5 is the hydrogen transferred from methane to OH.",
+    "Endpoint structures are rough separated-reactant/product geometries and should be optimized before using as quantitative references."
+  ]
+}

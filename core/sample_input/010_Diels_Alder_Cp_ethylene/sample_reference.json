@@ -1,0 +1,36 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "010_Diels_Alder_Cp_ethylene",
+  "legacy_sample_name": "Diels_Alder_cyclopentadiene_ethylene",
+  "display_name": "Cyclopentadiene + ethylene Diels-Alder reaction",
+  "description": "Neutral concerted cycloaddition sample ending in a rounded norbornene-like adduct.",
+  "formula": "C7H10",
+  "molecular_weight": 94.1543,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Concerted bond-formation path-finding test.",
+  "recommended_initial_path_methods": [
+    "DMF",
+    "NEB"
+  ],
+  "difficulty": "medium",
+  "ui_note": null,
+  "tags": [
+    "Diels_Alder",
+    "cycloaddition",
+    "neutral",
+    "closed_shell"
+  ],
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "not_curated_in_this_patch",
+  "reference_values": [],
+  "notes": [
+    "Atom ordering keeps the five cyclopentadiene carbons first, followed by the two ethylene carbons.",
+    "The product is a rounded norbornene-like adduct geometry for path-finding tests.",
+    "A literature DeltaG_activation value should be added only after choosing endo/exo, phase, temperature, and computational level."
+  ]
+}

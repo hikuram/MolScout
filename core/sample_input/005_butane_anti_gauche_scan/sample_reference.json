@@ -1,0 +1,70 @@
+{
+  "schema_version": "0.2.0",
+  "sample_name": "005_butane_anti_gauche_scan",
+  "legacy_sample_name": "butane_anti_gauche",
+  "display_name": "Butane anti to gauche rotation",
+  "description": "Simple conformational change for dihedral SCAN and conformer-energy checks.",
+  "formula": "C4H10",
+  "molecular_weight": 58.1222,
+  "charge": 0,
+  "multiplicity": 1,
+  "input_files": [
+    "reactant.xyz",
+    "product.xyz"
+  ],
+  "recommended_use": "Dihedral SCAN sample with a familiar conformational reference.",
+  "recommended_initial_path_methods": [
+    "SCAN",
+    "NEB"
+  ],
+  "difficulty": "small",
+  "ui_note": "Recommended for SCAN mode.",
+  "tags": [
+    "scan",
+    "dihedral",
+    "conformation",
+    "neutral",
+    "closed_shell"
+  ],
+  "suggested_scan": {
+    "atom_indices_1_based": [
+      1,
+      2,
+      3,
+      4
+    ],
+    "coordinate": "dihedral"
+  },
+  "curation_status": "candidate_initial_geometry",
+  "reference_value_status": "conformational_reference_not_deltaG_activation",
+  "reference_values": [
+    {
+      "quantity": "anti_gauche_energy_difference",
+      "value": 0.9,
+      "unit": "kcal/mol",
+      "temperature_K": null,
+      "phase": "gas",
+      "note": "Common textbook value; gauche is higher than anti."
+    },
+    {
+      "quantity": "approx_torsional_barrier_relative_to_anti",
+      "value": 5.1,
+      "unit": "kcal/mol",
+      "temperature_K": null,
+      "phase": "gas",
+      "note": "Approximate syn-eclipsed barrier; not a thermochemical DeltaG_activation."
+    }
+  ],
+  "sources": {
+    "oregon_state_butane_rotation": {
+      "type": "teaching_resource",
+      "citation": "Oregon State University, Butane rotation and conformational energy reference values.",
+      "url": "https://sites.science.oregonstate.edu/~gablek/CH334/Chapter3/rotation.htm"
+    }
+  },
+  "notes": [
+    "Use mainly for SCAN UI and dihedral-path smoke testing.",
+    "Coordinates were generated with RDKit/UFF and rounded to 0.001 Angstrom.",
+    "The _scan suffix means SCAN is the preferred initial-path mode, not the only supported mode."
+  ]
+}
