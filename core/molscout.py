@@ -238,13 +238,13 @@ def process_local_maxima():
                 vib_result = vib_img(base_name + ".xyz", is_ts=is_ts_point)
             except Exception as e:
                 log("Warn", f"Vibrations failed for {base_name}: {e}")
-                vib_result = [None] * 5
+                vib_result = [None] * 6
             t_vib = timepfc() - t_vib_start
             t_vib_sum += t_vib
             
             write_result(
                 ['time_vib [s]', 'ZPE [kcal/mol]', 'E_0K [kcal/mol]', 'H [kcal/mol]', 
-                 'G [kcal/mol]', 'G_std [kcal/mol]'],
+                 'G [kcal/mol]', 'G_std [kcal/mol]', 'G_floor [kcal/mol]'],
                 [t_vib] + vib_result
             )
             log("Vib", f"-> Vibrations finished in {t_vib:.2f} s")
@@ -800,6 +800,60 @@ def generate_vibration_xyz(atoms, vib, mode_index, output, steps=5, scale=2.0):
     write(output, images)
     log("Info", f"Wrote {len(images)} frames to {output}")
 
+def calc_qRRHO_entropy_correction(vib_energies_eV: list, T: float, cutoff_cm1: float = 100.0) -> float:
+    """
+    Calculate Grimme's qRRHO (quasi-Rigid Rotor Harmonic Oscillator) entropy correction (in eV/K).
+    Returns the difference: S_qRRHO - S_harmonic
+    Reference: Grimme, S. Chem. Eur. J. 2012, 18, 9955.
+    """
+    if not vib_energies_eV:
+        return 0.0
+
+    nu = np.array(vib_energies_eV) / units.invcm
+    nu_0 = cutoff_cm1
+    
+    # 1. Damping function
+    w = 1.0 / (1.0 + (nu_0 / nu)**4)
+    
+    # 2. Harmonic oscillator entropy (S_v)
+    x = np.array(vib_energies_eV) / (units.kB * T)
+    S_v = units.kB * (x / (np.exp(x) - 1.0) - np.log(1.0 - np.exp(-x)))
+    
+    # 3. Rigid rotor entropy (S_r) for low frequencies
+    # Derived from B = h \nu, yielding S_r for 1D rotor
+    S_r = units.kB * (0.5 + np.log(np.sqrt(units.kB * T / np.array(vib_energies_eV))))
+    
+    # 4. Difference between qRRHO and pure harmonic entropy
+    S_qRRHO = w * S_v + (1.0 - w) * S_r
+    delta_S = np.sum(S_qRRHO - S_v)
+    
+    return delta_S
+
+
+def calc_floor_entropy_correction(vib_energies_eV: list, T: float, cutoff_cm1: float = 100.0) -> float:
+    """
+    Calculate Truhlar's floor entropy correction (in eV/K).
+    Returns the difference: S_floor - S_harmonic
+    """
+    if not vib_energies_eV:
+        return 0.0
+        
+    cutoff_eV = cutoff_cm1 * units.invcm
+    
+    # 1. Harmonic oscillator entropy (S_v)
+    x = np.array(vib_energies_eV) / (units.kB * T)
+    S_v = units.kB * (x / (np.exp(x) - 1.0) - np.log(1.0 - np.exp(-x)))
+    
+    # 2. Floor entropy
+    vib_floor = np.maximum(vib_energies_eV, cutoff_eV)
+    x_floor = vib_floor / (units.kB * T)
+    S_floor = units.kB * (x_floor / (np.exp(x_floor) - 1.0) - np.log(1.0 - np.exp(-x_floor)))
+    
+    delta_S = np.sum(S_floor - S_v)
+    
+    return delta_S
+
+
 # Run vibrations and thermodynamics
 def vib_img(xyz_name, is_ts=None):
     img = read(xyz_name)
@@ -827,6 +881,7 @@ def vib_img(xyz_name, is_ts=None):
         # --- Explicit mode selection before thermochemistry ---
         freq_cutoff_cm1 = 50.0
         freq_cutoff_eV = freq_cutoff_cm1 * units.invcm
+
 
         # Threshold used only when is_ts is not provided by the caller.
         ts_recognition_threshold_cm1 = 40.0
@@ -860,8 +915,7 @@ def vib_img(xyz_name, is_ts=None):
                 log("Thermo", f"Largest imaginary mode ({ts_mode_cm1:.1f} i cm^-1) is not treated as a TS mode.")
                 log("Thermo", f"Treating all {len(imag_indices)} imaginary mode(s) as low-frequency noise.")
 
-        # Convert all non-TS modes to positive magnitudes. The final physical
-        # mode count is enforced below, before any frequency floor is applied.
+        # Convert all non-TS modes to positive magnitudes.
         vib_energies_all = []
         for idx, e in enumerate(raw_vib_energies):
             if is_ts and ts_mode_index is not None and idx == ts_mode_index:
@@ -870,7 +924,6 @@ def vib_img(xyz_name, is_ts=None):
             if magnitude_eV > 1e-10:
                 vib_energies_all.append(magnitude_eV)
 
-        # Dynamically obtain symmetry and geometry via PySCF
         geom_type, sym_num, _ = get_symmetry_info(img, tol=1e-3)
 
         natoms = len(img)
@@ -900,13 +953,13 @@ def vib_img(xyz_name, is_ts=None):
         else:
             vib_energies = vib_energies_all[-expected_modes:]
 
-        n_below_floor = sum(e < freq_cutoff_eV for e in vib_energies)
+        n_below_100 = sum(e < 100.0 * units.invcm for e in vib_energies)
         min_freq = min(vib_energies) / units.invcm if vib_energies else 0.0
         log(
             "Thermo",
             f"Mode selection: raw={len(raw_vib_energies)}, selected={len(vib_energies)}, "
             f"expected={expected_modes}, is_ts={is_ts}, min={min_freq:.1f} cm^-1, "
-            f"below_floor={n_below_floor}"
+            f"below_100cm-1={n_below_100}"
         )
         # --------------------------------------------------------------
 
@@ -916,37 +969,41 @@ def vib_img(xyz_name, is_ts=None):
             atoms=img, geometry=geom_type, symmetrynumber=sym_num, spin=(g.MULT-1)/2,
             vib_selection="all", ignore_imag_modes=False
         )
-        G_eV_std = thermo_std.get_gibbs_energy(
-            temperature=g.THERMO_TEMPERATURE, pressure=g.THERMO_ATOMOSPHERE, verbose=False
-        )
+        
+        # Get raw enthalpy and entropy once
+        H_eV_std = thermo_std.get_enthalpy(temperature=g.THERMO_TEMPERATURE, verbose=False)
+        S_eV_std = thermo_std.get_entropy(temperature=g.THERMO_TEMPERATURE, pressure=g.THERMO_ATOMOSPHERE, verbose=False)
+        G_eV_std = H_eV_std - g.THERMO_TEMPERATURE * S_eV_std
 
-        # 2. Truhlar's Floor
-        # Apply the floor only after final mode selection.
-        vib_energies_floor = [max(e, freq_cutoff_eV) for e in vib_energies]
-        thermo_floor = IdealGasThermo(
-            vib_energies=vib_energies_floor, potentialenergy=electronic_energy,
-            atoms=img, geometry=geom_type, symmetrynumber=sym_num, spin=(g.MULT-1)/2,
-            vib_selection="all", ignore_imag_modes=False
-        )
-        G_eV_floor = thermo_floor.get_gibbs_energy(
-            temperature=g.THERMO_TEMPERATURE, pressure=g.THERMO_ATOMOSPHERE, verbose=False
-        )
-        log("Thermo", f"Applied Truhlar's Floor correction (floor: {freq_cutoff_cm1} cm^-1)")
+        # 2. Grimme's qRRHO Correction
+        delta_S_qRRHO = calc_qRRHO_entropy_correction(vib_energies, g.THERMO_TEMPERATURE, cutoff_cm1=100.0)
+        S_eV_qRRHO = S_eV_std + delta_S_qRRHO
+        G_eV_qRRHO = H_eV_std - g.THERMO_TEMPERATURE * S_eV_qRRHO
+        
+        log("Thermo", "Applied Grimme's qRRHO entropy correction (nu_0: 100 cm^-1)")
+        
+        # 3. Truhlar's Floor Correction (Entropy only)
+        delta_S_floor = calc_floor_entropy_correction(vib_energies, g.THERMO_TEMPERATURE, cutoff_cm1=100.0)
+        S_eV_floor = S_eV_std + delta_S_floor
+        G_eV_floor = H_eV_std - g.THERMO_TEMPERATURE * S_eV_floor
+        
+        log("Thermo", "Applied Truhlar's Floor entropy correction (floor: 100 cm^-1)")
 
         # Convert everything to kcal/mol
         zpe_eV = 0.5 * sum(vib_energies)
         zpe_kcal = g.EV_TO_KCAL_MOL * zpe_eV
         E_0K_kcal = g.EV_TO_KCAL_MOL * (zpe_eV + electronic_energy)
-        H_kcal = g.EV_TO_KCAL_MOL * thermo_std.get_enthalpy(temperature=g.THERMO_TEMPERATURE, verbose=False)
+        H_kcal = g.EV_TO_KCAL_MOL * H_eV_std
         G_kcal_std = g.EV_TO_KCAL_MOL * G_eV_std
+        G_kcal_qRRHO = g.EV_TO_KCAL_MOL * G_eV_qRRHO
         G_kcal_floor = g.EV_TO_KCAL_MOL * G_eV_floor
-        # Floor is the main G
-        G_kcal = G_kcal_floor
+        
+        # The main Gibbs free energy G uses the qRRHO method
+        G_kcal = G_kcal_qRRHO
 
-        return [zpe_kcal, E_0K_kcal, H_kcal, G_kcal, G_kcal_std]
+        return [zpe_kcal, E_0K_kcal, H_kcal, G_kcal, G_kcal_std, G_kcal_floor]
     finally:
         vib.clean()
-        
 
 def make_optpoints_traj(peak_files: List[str], out_traj: str = "optpoints/optpoints.traj") -> List[str]:
     """
@@ -1130,12 +1187,13 @@ def process_batch_frames():
                     vib_result = vib_img(target_xyz)
                 except Exception as e:
                     log("Warn", f"Vibrations failed for {base_name}: {e}")
-                    vib_result = [None] * 5
+                    vib_result = [None] * 6
                 
                 t_vib = timepfc() - t_vib_start
                 t_vib_sum += t_vib
                 write_result(
-                    ['time_vib [s]', 'ZPE [kcal/mol]', 'E_0K [kcal/mol]', 'H [kcal/mol]', 'G [kcal/mol]', 'G_std [kcal/mol]'],
+                    ['time_vib [s]', 'ZPE [kcal/mol]', 'E_0K [kcal/mol]', 'H [kcal/mol]', 
+                     'G [kcal/mol]', 'G_std [kcal/mol]', 'G_floor [kcal/mol]'],
                     [t_vib] + vib_result,
                     idx
                 )
