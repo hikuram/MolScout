@@ -800,34 +800,56 @@ def generate_vibration_xyz(atoms, vib, mode_index, output, steps=5, scale=2.0):
     write(output, images)
     log("Info", f"Wrote {len(images)} frames to {output}")
 
-def calc_qRRHO_entropy_correction(vib_energies_eV: list, T: float, cutoff_cm1: float = 100.0) -> float:
+def calc_qRRHO_entropy_correction(
+    vib_energies_eV: list,
+    atoms: Atoms,
+    T: float,
+    cutoff_cm1: float = 100.0,
+    alpha: float = 4.0,
+) -> float:
     """
-    Calculate Grimme's qRRHO (quasi-Rigid Rotor Harmonic Oscillator) entropy correction (in eV/K).
-    Returns the difference: S_qRRHO - S_harmonic
-    Reference: Grimme, S. Chem. Eur. J. 2012, 18, 9955.
+    Calculate an ASE RRHOMode-like Grimme qRRHO entropy correction in eV/K.
+    Returns the difference: S_qRRHO - S_harmonic.
     """
     if not vib_energies_eV:
         return 0.0
 
-    nu = np.array(vib_energies_eV) / units.invcm
-    nu_0 = cutoff_cm1
-    
-    # 1. Damping function
-    w = 1.0 / (1.0 + (nu_0 / nu)**4)
-    
-    # 2. Harmonic oscillator entropy (S_v)
-    x = np.array(vib_energies_eV) / (units.kB * T)
-    S_v = units.kB * (x / (np.exp(x) - 1.0) - np.log(1.0 - np.exp(-x)))
-    
-    # 3. Rigid rotor entropy (S_r) for low frequencies
-    # Derived from B = h \nu, yielding S_r for 1D rotor
-    S_r = units.kB * (0.5 + np.log(np.sqrt(units.kB * T / np.array(vib_energies_eV))))
-    
-    # 4. Difference between qRRHO and pure harmonic entropy
-    S_qRRHO = w * S_v + (1.0 - w) * S_r
-    delta_S = np.sum(S_qRRHO - S_v)
-    
-    return delta_S
+    if atoms.pbc.any():
+        raise ValueError("Atoms object should not have periodic boundary conditions.")
+
+    energies = np.array(vib_energies_eV, dtype=float)
+    freqs_cm1 = energies / units.invcm
+    freqs_cm1 = np.maximum(freqs_cm1, 1.0e-12)
+
+    inertias = atoms.get_moments_of_inertia()
+    mean_inertia = float(np.mean(inertias))
+
+    kT_si = units._k * T
+    R_si = units._k * units._Nav
+    B_av = mean_inertia / (units.kg * units.m**2)
+
+    x = energies / (units.kB * T)
+    S_harm = units.kB * (
+        x / (np.exp(x) - 1.0) - np.log(1.0 - np.exp(-x))
+    )
+
+    omega = units._c * freqs_cm1 * 1.0e2
+    mu = units._hplanck / (8.0 * np.pi**2 * omega)
+    mu_prime = (mu * B_av) / (mu + B_av)
+
+    rotor_arg = np.sqrt(
+        8.0 * np.pi**3 * mu_prime * kT_si / units._hplanck**2
+    )
+    rotor_arg = np.maximum(rotor_arg, 1.0e-300)
+
+    S_rot = R_si * (0.5 + np.log(rotor_arg))
+    S_rot *= units.J / units._Nav
+
+    weight = 1.0 / (1.0 + (cutoff_cm1 / freqs_cm1) ** alpha)
+    S_qRRHO = weight * S_harm + (1.0 - weight) * S_rot
+    delta_S = np.sum(S_qRRHO - S_harm)
+
+    return float(delta_S)
 
 
 def calc_floor_entropy_correction(vib_energies_eV: list, T: float, cutoff_cm1: float = 100.0) -> float:
@@ -879,9 +901,6 @@ def vib_img(xyz_name, is_ts=None):
         raw_vib_energies = list(vib.get_energies()) # Units: eV
 
         # --- Explicit mode selection before thermochemistry ---
-        freq_cutoff_cm1 = 50.0
-        freq_cutoff_eV = freq_cutoff_cm1 * units.invcm
-
 
         # Threshold used only when is_ts is not provided by the caller.
         ts_recognition_threshold_cm1 = 40.0
@@ -976,7 +995,9 @@ def vib_img(xyz_name, is_ts=None):
         G_eV_std = H_eV_std - g.THERMO_TEMPERATURE * S_eV_std
 
         # 2. Grimme's qRRHO Correction
-        delta_S_qRRHO = calc_qRRHO_entropy_correction(vib_energies, g.THERMO_TEMPERATURE, cutoff_cm1=100.0)
+        delta_S_qRRHO = calc_qRRHO_entropy_correction(
+            vib_energies, img, g.THERMO_TEMPERATURE, cutoff_cm1=100.0
+        )
         S_eV_qRRHO = S_eV_std + delta_S_qRRHO
         G_eV_qRRHO = H_eV_std - g.THERMO_TEMPERATURE * S_eV_qRRHO
         
