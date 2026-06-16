@@ -174,6 +174,166 @@ WORKFLOW_PRESET_STEPS = {
     },
 }
 
+SUBMIT_DEFAULTS_KEY = "submit_defaults"
+PATH_SUBMIT_SECTION = "path_search"
+CONCAT_SUBMIT_SECTION = "concat"
+
+INITIAL_PATH_DEFAULTS = {
+    "init_path_method": "DMF",
+    "nmove": 40,
+    "dmf_convergence": "tight",
+    "update_teval": False,
+    "neb_images": 10,
+    "neb_spring_constant": 0.1,
+    "neb_climb": True,
+    "scan_preset": "custom",
+    "scan_type": "bond",
+    "scan_type_previous": "bond",
+    "scan_indices_text": "0,1",
+    "scan_steps": 10,
+    "scan_step_mode": "steps",
+    "scan_step_size": 0.05,
+    "scan_range_mode": "auto_to_absolute",
+    "scan_start_auto": True,
+    "scan_start_val": 0.0,
+    "scan_end_val": 2.0,
+    "scan_start_delta": 0.0,
+    "scan_end_delta": 1.0,
+}
+
+MODULE_DEFAULTS = {
+    "use_sella_in_opt": False,
+    "opt_fmax": 0.01,
+    "tsopt_fmax": 0.0004,
+    "refine_calc_type": "pyscf_high",
+    "sella_internal_auto": True,
+    "sella_internal": True,
+    "irc_dx_init": 0.06,
+    "irc_dx_max": 0.12,
+    "irc_dx_min": 0.02,
+    "opt_optpoints_again_on": False,
+    "fixed_atoms_text": "",
+}
+
+METHOD_DEFAULTS = {
+    "method": "orbmol",
+    "custom": "orbmol",
+    "orbmol_version": DEFAULT_ORBMOL_VERSION,
+    "alpb_solvent": "None",
+    "tblite": "hybrid",
+    "tblite_accuracy": DEFAULT_TBLITE_ACCURACY,
+}
+
+PATH_SUBMIT_DEFAULTS = {
+    "preset": next(iter(WORKFLOW_LABELS)),
+    **INITIAL_PATH_DEFAULTS,
+    **METHOD_DEFAULTS,
+    **{f"workflow_step_{name}": value for name, value in WORKFLOW_PRESET_STEPS[next(iter(WORKFLOW_LABELS))].items()},
+    "charge": 0,
+    "mult": 1,
+    "temp": 298.15,
+    "result_name": "result.csv",
+    "refine_input_on": True,
+    "pick_optpoints_on": True,
+    "save_fig_on": True,
+    **MODULE_DEFAULTS,
+}
+
+CONCAT_SUBMIT_DEFAULTS = {
+    **METHOD_DEFAULTS,
+    "do_opt": False,
+    "do_vib": False,
+    "do_refine": False,
+    "charge": 0,
+    "mult": 1,
+    "temp": 298.15,
+    "result_name": "result.csv",
+    "save_fig_on": True,
+    "pick_optpoints_on": False,
+    **MODULE_DEFAULTS,
+}
+
+
+def session_submit_defaults(session: dict, section: str) -> dict[str, object]:
+    defaults = session.get(SUBMIT_DEFAULTS_KEY, {})
+    if not isinstance(defaults, dict):
+        return {}
+    section_defaults = defaults.get(section, {})
+    return dict(section_defaults) if isinstance(section_defaults, dict) else {}
+
+
+def prefixed_state_keys(prefix: str, names: list[str]) -> dict[str, str]:
+    return {name: f"{prefix}_{name}" for name in names}
+
+
+def path_submit_state_keys(session_id: str) -> dict[str, str]:
+    path_prefix = f"{session_id}_path"
+    keys = {
+        "preset": f"{session_id}_preset",
+        **prefixed_state_keys(path_prefix, list(INITIAL_PATH_DEFAULTS)),
+        **prefixed_state_keys(session_id, list(METHOD_DEFAULTS)),
+        **{f"workflow_step_{name}": workflow_step_key(session_id, name) for name in WORKFLOW_STEP_FIELDS},
+        "charge": f"{session_id}_charge",
+        "mult": f"{session_id}_mult",
+        "temp": f"{session_id}_temp",
+        "result_name": f"{session_id}_res",
+        "refine_input_on": f"{session_id}_refine_input_on",
+        "pick_optpoints_on": f"{session_id}_pick_optpoints",
+        "save_fig_on": f"{session_id}_savefig",
+    }
+    keys.update(prefixed_state_keys(path_prefix, list(MODULE_DEFAULTS)))
+    return keys
+
+
+def concat_submit_state_keys(session_id: str) -> dict[str, str]:
+    prefix = f"{session_id}_cat"
+    keys = {
+        **prefixed_state_keys(prefix, list(METHOD_DEFAULTS)),
+        "do_opt": f"{prefix}_do_opt",
+        "do_vib": f"{prefix}_do_vib",
+        "do_refine": f"{prefix}_do_refine",
+        "charge": f"{prefix}_charge",
+        "mult": f"{prefix}_mult",
+        "temp": f"{prefix}_temp",
+        "result_name": f"{prefix}_res",
+        "save_fig_on": f"{prefix}_savefig",
+        "pick_optpoints_on": f"{prefix}_pick_optpoints",
+    }
+    keys.update(prefixed_state_keys(prefix, list(MODULE_DEFAULTS)))
+    return keys
+
+
+def apply_submit_defaults(
+    session: dict,
+    section: str,
+    built_in_defaults: dict[str, object],
+    state_keys: dict[str, str],
+    *,
+    force: bool = False,
+) -> dict[str, object]:
+    defaults = {**built_in_defaults, **session_submit_defaults(session, section)}
+    for name, key in state_keys.items():
+        if name in defaults and (force or key not in st.session_state):
+            st.session_state[key] = defaults[name]
+    return defaults
+
+
+def save_submit_defaults(session: dict, section: str, values: dict[str, object]) -> None:
+    updated = dict(session)
+    defaults = dict(updated.get(SUBMIT_DEFAULTS_KEY, {}))
+    defaults[section] = values
+    updated[SUBMIT_DEFAULTS_KEY] = defaults
+    save_session(updated)
+
+
+def submit_reset_pending_key(session_id: str, section: str) -> str:
+    return f"{session_id}_{section}_reset_pending"
+
+
+def sync_submit_default_trackers(session_id: str, preset: str) -> None:
+    st.session_state[f"{session_id}_workflow_dependent_preset_applied"] = preset
+    st.session_state[f"{session_id}_workflow_step_preset_applied"] = preset
+
 
 def workflow_step_key(session_id: str, step_name: str) -> str:
     return f"{session_id}_workflow_step_{step_name}"
@@ -1670,25 +1830,93 @@ def render_module_settings(
             values["scan_end_delta"] = 1.0
 
         opt_cols = st.columns(4)
-        values["use_sella_in_opt"] = opt_cols[0].checkbox("optimization で Sella を使用", value=False, key=f"{prefix}_use_sella_in_opt")
-        values["opt_fmax"] = opt_cols[1].number_input("OPT fmax", min_value=0.0001, value=0.01, step=0.001, format="%.4f", key=f"{prefix}_opt_fmax")
-        values["tsopt_fmax"] = opt_cols[2].number_input("TSOPT fmax", min_value=0.0001, value=0.0004, step=0.0001, format="%.4f", key=f"{prefix}_tsopt_fmax")
-        values["refine_calc_type"] = opt_cols[3].selectbox("Refine method", ["pyscf_high", "pyscf"], index=0, key=f"{prefix}_refine_calc_type")
+        use_sella_key = f"{prefix}_use_sella_in_opt"
+        opt_fmax_key = f"{prefix}_opt_fmax"
+        tsopt_fmax_key = f"{prefix}_tsopt_fmax"
+        refine_calc_key = f"{prefix}_refine_calc_type"
+        refine_calc_options = ["pyscf_high", "pyscf"]
+        values["use_sella_in_opt"] = opt_cols[0].checkbox(
+            "optimization で Sella を使用",
+            key=use_sella_key,
+            **widget_default_kwargs(use_sella_key, value=False),
+        )
+        values["opt_fmax"] = opt_cols[1].number_input(
+            "OPT fmax",
+            min_value=0.0001,
+            step=0.001,
+            format="%.4f",
+            key=opt_fmax_key,
+            **widget_default_kwargs(opt_fmax_key, value=0.01),
+        )
+        values["tsopt_fmax"] = opt_cols[2].number_input(
+            "TSOPT fmax",
+            min_value=0.0001,
+            step=0.0001,
+            format="%.4f",
+            key=tsopt_fmax_key,
+            **widget_default_kwargs(tsopt_fmax_key, value=0.0004),
+        )
+        values["refine_calc_type"] = opt_cols[3].selectbox(
+            "Refine method",
+            refine_calc_options,
+            key=refine_calc_key,
+            **selectbox_default_kwargs(refine_calc_key, refine_calc_options, "pyscf_high"),
+        )
 
         sella_cols = st.columns(4)
-        values["sella_internal_auto"] = sella_cols[0].checkbox("SELLA internal auto", value=True, key=f"{prefix}_sella_internal_auto")
-        values["sella_internal"] = sella_cols[1].checkbox("SELLA internal", value=True, key=f"{prefix}_sella_internal")
-        values["irc_dx_init"] = sella_cols[2].number_input("IRC dx init", min_value=0.001, value=0.06, step=0.01, format="%.3f", key=f"{prefix}_irc_dx_init")
-        values["irc_dx_max"] = sella_cols[3].number_input("IRC dx max", min_value=0.001, value=0.12, step=0.01, format="%.3f", key=f"{prefix}_irc_dx_max")
+        sella_auto_key = f"{prefix}_sella_internal_auto"
+        sella_internal_key = f"{prefix}_sella_internal"
+        irc_dx_init_key = f"{prefix}_irc_dx_init"
+        irc_dx_max_key = f"{prefix}_irc_dx_max"
+        values["sella_internal_auto"] = sella_cols[0].checkbox(
+            "SELLA internal auto",
+            key=sella_auto_key,
+            **widget_default_kwargs(sella_auto_key, value=True),
+        )
+        values["sella_internal"] = sella_cols[1].checkbox(
+            "SELLA internal",
+            key=sella_internal_key,
+            **widget_default_kwargs(sella_internal_key, value=True),
+        )
+        values["irc_dx_init"] = sella_cols[2].number_input(
+            "IRC dx init",
+            min_value=0.001,
+            step=0.01,
+            format="%.3f",
+            key=irc_dx_init_key,
+            **widget_default_kwargs(irc_dx_init_key, value=0.06),
+        )
+        values["irc_dx_max"] = sella_cols[3].number_input(
+            "IRC dx max",
+            min_value=0.001,
+            step=0.01,
+            format="%.3f",
+            key=irc_dx_max_key,
+            **widget_default_kwargs(irc_dx_max_key, value=0.12),
+        )
 
         tail_cols = st.columns(3)
-        values["irc_dx_min"] = tail_cols[0].number_input("IRC dx min", min_value=0.001, value=0.02, step=0.01, format="%.3f", key=f"{prefix}_irc_dx_min")
-        values["opt_optpoints_again_on"] = tail_cols[1].checkbox("optpoints を再び構造最適化", value=False, key=f"{prefix}_opt_optpoints_again_on")
+        irc_dx_min_key = f"{prefix}_irc_dx_min"
+        optpoints_again_key = f"{prefix}_opt_optpoints_again_on"
+        fixed_atoms_key = f"{prefix}_fixed_atoms_text"
+        values["irc_dx_min"] = tail_cols[0].number_input(
+            "IRC dx min",
+            min_value=0.001,
+            step=0.01,
+            format="%.3f",
+            key=irc_dx_min_key,
+            **widget_default_kwargs(irc_dx_min_key, value=0.02),
+        )
+        values["opt_optpoints_again_on"] = tail_cols[1].checkbox(
+            "optpoints を再び構造最適化",
+            key=optpoints_again_key,
+            **widget_default_kwargs(optpoints_again_key, value=False),
+        )
         values["fixed_atoms_text"] = st.text_input(
             "Fixed atoms",
-            value="",
-            key=f"{prefix}_fixed_atoms_text",
+            key=fixed_atoms_key,
             help="comma 区切りの atom indices。例: 0,1,2",
+            **widget_default_kwargs(fixed_atoms_key, value=""),
         )
         
     return values
@@ -2460,8 +2688,22 @@ def render_job_submission(session: dict) -> None:
     sample_cases = list_sample_cases()
     existing_inputs = list_existing_inputs(session_id)
     existing_result_files = list_session_files(session_id, TABLE_EXTENSIONS)
+    path_state_keys = path_submit_state_keys(session_id)
+    path_was_initialized = path_state_keys["preset"] in st.session_state
+    path_reset_applied = bool(st.session_state.pop(submit_reset_pending_key(session_id, PATH_SUBMIT_SECTION), False))
+    path_defaults = apply_submit_defaults(
+        session,
+        PATH_SUBMIT_SECTION,
+        PATH_SUBMIT_DEFAULTS,
+        path_state_keys,
+        force=path_reset_applied,
+    )
+    if path_reset_applied or not path_was_initialized:
+        sync_submit_default_trackers(session_id, str(path_defaults["preset"]))
 
     st.markdown("## :material/add_circle: New Path Search")
+    if path_reset_applied:
+        st.success("セッションのデフォルト設定に戻しました。")
     
     st.markdown("#### ワークフローとインプット（ソース）の設定")
     selector_cols = st.columns([1, 1.2])
@@ -2672,9 +2914,12 @@ def render_job_submission(session: dict) -> None:
         with st.container(border=True):
             param_cols = st.columns([1, 1.2, 1.2])
             with param_cols[0]:
-                charge = st.number_input("Charge", value=0, step=1, key=f"{session_id}_charge")
-                mult = st.number_input("Multiplicity", min_value=1, value=1, step=1, key=f"{session_id}_mult")
-                temp = st.number_input("Temperature [K]", value=298.15, key=f"{session_id}_temp")
+                charge_key = f"{session_id}_charge"
+                mult_key = f"{session_id}_mult"
+                temp_key = f"{session_id}_temp"
+                charge = st.number_input("Charge", step=1, key=charge_key, **widget_default_kwargs(charge_key, value=0))
+                mult = st.number_input("Multiplicity", min_value=1, step=1, key=mult_key, **widget_default_kwargs(mult_key, value=1))
+                temp = st.number_input("Temperature [K]", key=temp_key, **widget_default_kwargs(temp_key, value=298.15))
             with param_cols[1]:
                 tblite_method = st.selectbox("TBLITE method", ["hybrid", "GFN2-xTB", "GFN1-xTB"], key=f"{session_id}_tblite", disabled=not tblite_enabled)
             with param_cols[2]:
@@ -2691,7 +2936,8 @@ def render_job_submission(session: dict) -> None:
         st.markdown("**5. Output Settings**")
         output_cols = st.columns([1, 2.4])
         with output_cols[0]:
-            result_name = Path(st.text_input("result CSV name", value="result.csv", key=f"{session_id}_res")).name
+            result_key = f"{session_id}_res"
+            result_name = Path(st.text_input("result CSV name", key=result_key, **widget_default_kwargs(result_key, value="result.csv"))).name
         with output_cols[1]:
             note = st.text_input("job note", value="", key=f"{session_id}_note")
 
@@ -2704,13 +2950,55 @@ def render_job_submission(session: dict) -> None:
             key=refine_input_key,
             disabled=mode != "reactant_product",
         )
-        pick_optpoints_on = extra_cols[1].checkbox("構造最適化点（optpoints）を抽出", value=True)
-        save_fig_on = extra_cols[2].checkbox("図を保存", value=True)
+        pick_optpoints_key = f"{session_id}_pick_optpoints"
+        save_fig_key = f"{session_id}_savefig"
+        pick_optpoints_on = extra_cols[1].checkbox(
+            "構造最適化点（optpoints）を抽出",
+            key=pick_optpoints_key,
+            **widget_default_kwargs(pick_optpoints_key, value=True),
+        )
+        save_fig_on = extra_cols[2].checkbox(
+            "図を保存",
+            key=save_fig_key,
+            **widget_default_kwargs(save_fig_key, value=True),
+        )
 
         st.space("small")
         with st.container(horizontal=True, horizontal_alignment="right"):
+            reset_defaults_pressed = st.form_submit_button("リセット", icon=":material/restart_alt:")
+            save_defaults_pressed = st.form_submit_button("セッションのデフォルトにする", icon=":material/save:")
             preview_pressed = st.form_submit_button("ワークフロー構造をプレビュー", icon=":material/account_tree:")
             submitted = st.form_submit_button("ジョブをキューに追加", type="primary", icon=":material/queue:")
+
+    if reset_defaults_pressed:
+        st.session_state[submit_reset_pending_key(session_id, PATH_SUBMIT_SECTION)] = True
+        st.rerun()
+
+    if save_defaults_pressed:
+        save_submit_defaults(
+            session,
+            PATH_SUBMIT_SECTION,
+            {
+                "preset": preset,
+                **module_settings,
+                "method": st.session_state.get(f"{session_id}_method", "orbmol"),
+                "custom": st.session_state.get(f"{session_id}_custom", method),
+                "orbmol_version": orbmol_version,
+                "alpb_solvent": alpb_solvent,
+                "tblite": tblite_method,
+                "tblite_accuracy": tblite_accuracy,
+                **{f"workflow_step_{name}": bool(st.session_state.get(key)) for name, key in step_keys.items()},
+                "charge": int(charge),
+                "mult": int(mult),
+                "temp": float(temp),
+                "result_name": result_name,
+                "refine_input_on": bool(refine_input_on),
+                "pick_optpoints_on": bool(pick_optpoints_on),
+                "save_fig_on": bool(save_fig_on),
+            },
+        )
+        st.success("この設定をセッションのデフォルトとして保存しました。")
+        st.rerun()
 
     if preview_pressed:
         render_workflow_preview_dialog(
@@ -2914,8 +3202,19 @@ def render_concat_submission(session: dict) -> None:
     session_id = session["session_id"]
     owner_label = session.get("owner_label", "anonymous")
     existing_inputs = list_existing_inputs(session_id)
+    concat_state_keys = concat_submit_state_keys(session_id)
+    concat_reset_applied = bool(st.session_state.pop(submit_reset_pending_key(session_id, CONCAT_SUBMIT_SECTION), False))
+    apply_submit_defaults(
+        session,
+        CONCAT_SUBMIT_SECTION,
+        CONCAT_SUBMIT_DEFAULTS,
+        concat_state_keys,
+        force=concat_reset_applied,
+    )
 
     st.markdown("## :material/library_add: New Concatenation")
+    if concat_reset_applied:
+        st.success("セッションのデフォルト設定に戻しました。")
     st.caption("複数の `.xyz` または `.traj` files を 1 つの trajectory に連結し、必要に応じて全 frame に対する batch processing (optimization, vibrational analysis, energy refinement) を順次実行します。")
 
     st.markdown("#### インプット（ソース）の設定")
@@ -2954,17 +3253,23 @@ def render_concat_submission(session: dict) -> None:
                 
         st.markdown("**2. Batch processing steps (optional)**")
         step_cols = st.columns(3)
-        do_opt = step_cols[0].checkbox("structure optimization", value=False)
-        do_vib = step_cols[1].checkbox("Vib & Thermo", value=False)
-        do_refine = step_cols[2].checkbox("Energy Refine", value=False)
+        do_opt_key = f"{session_id}_cat_do_opt"
+        do_vib_key = f"{session_id}_cat_do_vib"
+        do_refine_key = f"{session_id}_cat_do_refine"
+        do_opt = step_cols[0].checkbox("structure optimization", key=do_opt_key, **widget_default_kwargs(do_opt_key, value=False))
+        do_vib = step_cols[1].checkbox("Vib & Thermo", key=do_vib_key, **widget_default_kwargs(do_vib_key, value=False))
+        do_refine = step_cols[2].checkbox("Energy Refine", key=do_refine_key, **widget_default_kwargs(do_refine_key, value=False))
         
         st.markdown("**3. Parameters**")
         with st.container(border=True):
             param_cols = st.columns([1, 1.2, 1.2])
             with param_cols[0]:
-                charge = st.number_input("Charge", value=0, step=1, key=f"{session_id}_cat_charge")
-                mult = st.number_input("Multiplicity", min_value=1, value=1, step=1, key=f"{session_id}_cat_mult")
-                temp = st.number_input("Temperature [K]", value=298.15, key=f"{session_id}_cat_temp")
+                charge_key = f"{session_id}_cat_charge"
+                mult_key = f"{session_id}_cat_mult"
+                temp_key = f"{session_id}_cat_temp"
+                charge = st.number_input("Charge", step=1, key=charge_key, **widget_default_kwargs(charge_key, value=0))
+                mult = st.number_input("Multiplicity", min_value=1, step=1, key=mult_key, **widget_default_kwargs(mult_key, value=1))
+                temp = st.number_input("Temperature [K]", key=temp_key, **widget_default_kwargs(temp_key, value=298.15))
             with param_cols[1]:
                 tblite_method = st.selectbox("TBLITE method", ["hybrid", "GFN2-xTB", "GFN1-xTB"], key=f"{session_id}_cat_tblite", disabled=not tblite_enabled)
             with param_cols[2]:
@@ -2980,20 +3285,63 @@ def render_concat_submission(session: dict) -> None:
                 )
         output_cols = st.columns([1, 2.4])
         with output_cols[0]:
-            result_name = Path(st.text_input("result CSV name", value="result.csv", key=f"{session_id}_cat_res")).name
+            result_key = f"{session_id}_cat_res"
+            result_name = Path(st.text_input("result CSV name", key=result_key, **widget_default_kwargs(result_key, value="result.csv"))).name
         with output_cols[1]:
             note = st.text_input("job note", value="", key=f"{session_id}_cat_note")
 
         st.markdown("**4. Extra workflow flags**")
         extra_cols = st.columns(3)
-        save_fig_on = extra_cols[0].checkbox("図を保存", value=True, key=f"{session_id}_cat_savefig")
-        pick_optpoints_on = extra_cols[1].checkbox("構造最適化点（optpoints）を抽出", value=False, key=f"{session_id}_cat_pick_optpoints")
+        save_fig_key = f"{session_id}_cat_savefig"
+        pick_optpoints_key = f"{session_id}_cat_pick_optpoints"
+        save_fig_on = extra_cols[0].checkbox(
+            "図を保存",
+            key=save_fig_key,
+            **widget_default_kwargs(save_fig_key, value=True),
+        )
+        pick_optpoints_on = extra_cols[1].checkbox(
+            "構造最適化点（optpoints）を抽出",
+            key=pick_optpoints_key,
+            **widget_default_kwargs(pick_optpoints_key, value=False),
+        )
         module_settings = render_module_settings(f"{session_id}_cat", include_initial_path_method=False)
 
         st.space("small")
         with st.container(horizontal=True, horizontal_alignment="right"):
+            reset_defaults_pressed = st.form_submit_button("リセット", icon=":material/restart_alt:")
+            save_defaults_pressed = st.form_submit_button("セッションのデフォルトにする", icon=":material/save:")
             preview_pressed = st.form_submit_button("ワークフロー構造をプレビュー", icon=":material/account_tree:")
             submitted = st.form_submit_button("ジョブをキューに追加", type="primary", icon=":material/queue:")
+
+    if reset_defaults_pressed:
+        st.session_state[submit_reset_pending_key(session_id, CONCAT_SUBMIT_SECTION)] = True
+        st.rerun()
+
+    if save_defaults_pressed:
+        save_submit_defaults(
+            session,
+            CONCAT_SUBMIT_SECTION,
+            {
+                **module_settings,
+                "method": st.session_state.get(f"{session_id}_cat_method", "orbmol"),
+                "custom": st.session_state.get(f"{session_id}_cat_custom", method),
+                "orbmol_version": orbmol_version,
+                "alpb_solvent": alpb_solvent,
+                "tblite": tblite_method,
+                "tblite_accuracy": tblite_accuracy,
+                "do_opt": bool(do_opt),
+                "do_vib": bool(do_vib),
+                "do_refine": bool(do_refine),
+                "charge": int(charge),
+                "mult": int(mult),
+                "temp": float(temp),
+                "result_name": result_name,
+                "save_fig_on": bool(save_fig_on),
+                "pick_optpoints_on": bool(pick_optpoints_on),
+            },
+        )
+        st.success("この設定をセッションのデフォルトとして保存しました。")
+        st.rerun()
 
     if preview_pressed:
         render_concat_workflow_preview_dialog(
