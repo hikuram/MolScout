@@ -18,16 +18,43 @@ from app_ui.views import (
 )
 
 
+SELECTED_SESSION_STATE_KEY = "selected_session_id"
+SESSION_SELECTOR_WIDGET_KEY = "session_selector_id"
+
+
+def persist_selected_session(session_id: str) -> None:
+    """Keep the in-memory and persistent session selections in sync."""
+    st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
+    state = read_app_state()
+    if state.get(SELECTED_SESSION_STATE_KEY) != session_id:
+        state[SELECTED_SESSION_STATE_KEY] = session_id
+        write_app_state(state)
+
+
+def sync_selected_session_from_widget() -> None:
+    selected = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
+    if selected:
+        persist_selected_session(str(selected))
+
+
+def resolve_selected_session_id(sessions: list[dict]) -> str:
+    state = read_app_state()
+    session_ids = [item["session_id"] for item in sessions]
+    selected = st.session_state.get(SELECTED_SESSION_STATE_KEY) or state.get(SELECTED_SESSION_STATE_KEY)
+    if selected not in session_ids:
+        selected = session_ids[0]
+        persist_selected_session(str(selected))
+    return str(selected)
+
+
 @st.dialog("新規セッション作成")
 def open_create_session_dialog() -> None:
     owner_label = st.text_input("表示名", value="")
     notes = st.text_input("セッションノート", value="")
     if st.button(":material/add: 作成", type="primary", width="stretch"):
         session = create_session(owner_label=owner_label or "anonymous", notes=notes)
-        st.session_state["selected_session_id"] = session["session_id"]
-        state = read_app_state()
-        state["selected_session_id"] = session["session_id"]
-        write_app_state(state)
+        persist_selected_session(session["session_id"])
+        st.session_state[SESSION_SELECTOR_WIDGET_KEY] = session["session_id"]
         st.rerun()
 
 
@@ -78,15 +105,7 @@ def get_selected_session() -> dict | None:
     if not sessions:
         return None
 
-    state = read_app_state()
-    session_ids = [item["session_id"] for item in sessions]
-    selected = st.session_state.get("selected_session_id") or state.get("selected_session_id")
-    if selected not in session_ids:
-        selected = session_ids[0]
-        st.session_state["selected_session_id"] = selected
-        state["selected_session_id"] = selected
-        write_app_state(state)
-
+    selected = resolve_selected_session_id(sessions)
     return touch_session(str(selected))
 
 
@@ -101,14 +120,11 @@ def render_session_sidebar() -> dict | None:
                 open_create_session_dialog()
             return None
 
-        state = read_app_state()
         session_ids = [item["session_id"] for item in sessions]
-        selected = st.session_state.get("selected_session_id") or state.get("selected_session_id")
-        if selected not in session_ids:
-            selected = session_ids[0]
-            st.session_state["selected_session_id"] = selected
-            state["selected_session_id"] = selected
-            write_app_state(state)
+        selected = resolve_selected_session_id(sessions)
+        widget_selection = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
+        if widget_selection not in session_ids or widget_selection != selected:
+            st.session_state[SESSION_SELECTOR_WIDGET_KEY] = selected
 
         labels = {
             item["session_id"]: f"{item['session_id']} | {item.get('owner_label', 'anonymous')} | jobs {len(list_jobs(item['session_id']))}"
@@ -117,14 +133,10 @@ def render_session_sidebar() -> dict | None:
         selected_id = st.selectbox(
             "セッション選択",
             session_ids,
-            index=session_ids.index(str(selected)),
-            key="selected_session_id",
+            key=SESSION_SELECTOR_WIDGET_KEY,
             format_func=lambda session_id: labels[session_id],
+            on_change=sync_selected_session_from_widget,
         )
-        if selected_id != selected:
-            state["selected_session_id"] = selected_id
-            write_app_state(state)
-            st.rerun()
 
         if st.button(":material/add: 新規セッションを追加", type="primary", width="stretch"):
             open_create_session_dialog()
