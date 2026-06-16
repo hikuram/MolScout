@@ -30,7 +30,7 @@
 
   "presets": {
     "L1_fast": {
-      "xc": "b97-3c",
+      "xc": "b973c",
       "ecp": "def2-ECP",
       "with_df": true,
       "auxbasis": "def2-universal-jfit",
