@@ -107,9 +107,9 @@ def build_method(config: Dict[str, Any]):
 
 def build_3c_method(config: Dict[str, Any]):
     """Build a PySCF method for 3c functionals such as r2scan-3c or b97-3c."""
-    xc = str(config.get("xc", "B97-3c"))
+    xc = str(config.get("xc", "b973c"))
     if not xc.lower().endswith("3c"):
-        raise ValueError("The xc functional must be a 3c method, e.g., B97-3c.")
+        raise ValueError("The xc functional must be a 3c method, e.g., b973c.")
 
     from gpu4pyscf.drivers.dft_3c_driver import gen_disp_fun, parse_3c
 
@@ -131,7 +131,7 @@ def get_gradient_method(mf, xc_3c: Optional[str] = None):
     """Return a gradient method, including 3c dispersion corrections when needed."""
     if xc_3c is not None:
         if not str(xc_3c).lower().endswith("3c"):
-            raise ValueError("The xc functional must be a 3c method, e.g., B97-3c.")
+            raise ValueError("The xc functional must be a 3c method, e.g., b973c.")
         from gpu4pyscf.drivers.dft_3c_driver import gen_disp_grad_fun, parse_3c
 
         _, _, _, _, (xc_disp, _disp), xc_gcp = parse_3c(str(xc_3c).lower())
@@ -146,7 +146,7 @@ def get_Hessian_method(mf, xc_3c: Optional[str] = None):
     """Return a Hessian method, including 3c dispersion corrections when needed."""
     if xc_3c is not None:
         if not str(xc_3c).lower().endswith("3c"):
-            raise ValueError("The xc functional must be a 3c method, e.g., B97-3c.")
+            raise ValueError("The xc functional must be a 3c method, e.g., b973c.")
         from gpu4pyscf.drivers.dft_3c_driver import gen_disp_hess_fun, parse_3c
 
         _, _, _, _, (xc_disp, _disp), xc_gcp = parse_3c(str(xc_3c).lower())
