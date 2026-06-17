@@ -2368,56 +2368,6 @@ def render_job_detail(session_id: str, job: dict, jobs: list[dict], index: int) 
     render_job_results(job)
 
 
-@st.dialog("新規セッション作成")
-def open_create_session_modal():
-    owner_label = st.text_input("表示名", value="")
-    notes = st.text_input("セッションノート", value="")
-    if st.button(":material/add: 作成", type="primary"):
-        session = create_session(owner_label=owner_label or "anonymous", notes=notes)
-        state = read_app_state()
-        state["selected_session_id"] = session["session_id"]
-        write_app_state(state)
-        st.rerun()
-
-
-def render_session_controls() -> dict | None:
-    sessions = list_sessions()
-    col1, col2 = st.columns([3, 1], vertical_alignment="center")
-    
-    if not sessions:
-        with col1:
-            st.info("セッションはまだありません。")
-        with col2:
-            if st.button(":material/add: セッションを作成", type="primary", width="stretch"):
-                open_create_session_modal()
-        return None
-
-    state = read_app_state()
-    selected = state.get("selected_session_id")
-    session_ids = [item["session_id"] for item in sessions]
-    if selected not in session_ids:
-        selected = session_ids[0]
-        state["selected_session_id"] = selected
-        write_app_state(state)
-
-    labels = [
-        f"{item['session_id']} | {item.get('owner_label', 'anonymous')} | jobs {len(list_jobs(item['session_id']))}"
-        for item in sessions
-    ]
-    with col1:
-        chosen = st.selectbox("セッション選択", labels, index=session_ids.index(selected), label_visibility="collapsed")
-        selected_id = session_ids[labels.index(chosen)]
-        if selected_id != selected:
-            state["selected_session_id"] = selected_id
-            write_app_state(state)
-            st.rerun()
-    with col2:
-        if st.button(":material/add: 新規セッションを追加", type="primary", width="stretch"):
-            open_create_session_modal()
-            
-    return touch_session(selected_id)
-
-
 def render_session_overview(session: dict) -> None:
     jobs = list_jobs(session["session_id"])
     cols = st.columns(4)
@@ -3714,47 +3664,3 @@ def render_job_results(job: dict) -> None:
             selected = image_files[labels.index(st.selectbox("Image file", labels, key=f"img_{job['job_id']}"))]
             st.image(str(selected))
         else:
-            st.info("imageファイルはありません。")
-
-
-def main() -> None:
-    ensure_app_dirs()
-    maybe_run_startup_cleanup()
-    ensure_worker_running()
-    inject_css()
-    
-    render_sidebar()
-    render_header()
-    
-    render_queue_panel()
-    
-    st.divider()
-    
-    st.markdown("## :material/group_work: Sessions & Jobs")
-    session = render_session_controls()
-    
-    if session:
-        render_session_overview(session)
-        session_view = section_switch(
-            "session workspace",
-            ["新規 反応経路探索", "新規 ファイル連結処理", "セッション設定（PySCF）", "セッションジョブ（結果）確認"],
-            key=f"{session['session_id']}_session_view",
-            captions={
-                "新規 反応経路探索": "最小エネルギー経路探索、IRC、振動解析をキューに追加します。",
-                "新規 ファイル連結処理": "ファイル連結とバッチ処理をキューに追加します。",
-                "セッション設定（PySCF）": "セッション用のPySCF設定を編集します。",
-                "セッションジョブ（結果）確認": "キュー済み / 完了済みのジョブ、各種出力ファイルを確認します。",
-            },
-        )
-        if session_view == "新規 反応経路探索":
-            render_job_submission(session)
-        elif session_view == "新規 ファイル連結処理":
-            render_concat_submission(session)
-        elif session_view == "セッション設定（PySCF）":
-            render_session_config(session)
-        else:
-            render_session_jobs(session)
-
-
-if __name__ == "__main__":
-    main()
