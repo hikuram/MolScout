@@ -7,7 +7,6 @@ import streamlit as st
 from app_core.cleanup_manager import run_cleanup
 from app_core.paths import WORKER_LOG_FILE
 from app_core.session_manager import create_session, list_jobs, list_sessions, touch_session
-from app_core.storage import read_app_state, write_app_state
 from app_core.utils import tail_text
 from app_ui.views import (
     dependency_rows,
@@ -17,35 +16,42 @@ from app_ui.views import (
     sidebar_monitor_fragment,
 )
 
-
 SELECTED_SESSION_STATE_KEY = "selected_session_id"
 SESSION_SELECTOR_WIDGET_KEY = "session_selector_id"
 
-
 def persist_selected_session(session_id: str) -> None:
-    """Keep the in-memory and persistent session selections in sync."""
+    """Keep internal state and URL params in sync."""
     st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
-    state = read_app_state()
-    if state.get(SELECTED_SESSION_STATE_KEY) != session_id:
-        state[SELECTED_SESSION_STATE_KEY] = session_id
-        write_app_state(state)
-
+    st.query_params["session"] = session_id
 
 def sync_selected_session_from_widget() -> None:
+    """Sync state from sidebar selectbox."""
     selected = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
     if selected:
         persist_selected_session(str(selected))
 
-
 def resolve_selected_session_id(sessions: list[dict]) -> str:
-    state = read_app_state()
+    """Resolve active session ID safely (URL -> State -> Default)."""
     session_ids = [item["session_id"] for item in sessions]
-    selected = st.session_state.get(SELECTED_SESSION_STATE_KEY) or state.get(SELECTED_SESSION_STATE_KEY)
-    if selected not in session_ids:
-        selected = session_ids[0]
-        persist_selected_session(str(selected))
-    return str(selected)
 
+    # 1. Check URL
+    url_session = st.query_params.get("session")
+    if url_session in session_ids:
+        st.session_state[SELECTED_SESSION_STATE_KEY] = url_session
+        return url_session
+
+    # 2. Check Session State
+    local_session = st.session_state.get(SELECTED_SESSION_STATE_KEY)
+    if local_session in session_ids:
+        st.query_params["session"] = local_session
+        return local_session
+
+    # 3. Fallback to first session
+    fallback = session_ids[0] if session_ids else ""
+    if fallback:
+        persist_selected_session(fallback)
+        
+    return fallback
 
 @st.dialog("新規セッション作成")
 def open_create_session_dialog() -> None:
