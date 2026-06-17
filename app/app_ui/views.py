@@ -2036,26 +2036,6 @@ def render_queue_status_card(queue_state_label: str, queued_count: int, running_
     )
 
 
-def render_header() -> None:
-    with st.container(border=True):
-        left, right = st.columns([3, 1])
-        with left:
-            st.markdown("# :material/science: MolScout Remote Queue")
-            st.caption("長時間を要するワークフローを共有実行するための laboratory queue です。ユーザーセッションとサーバーモニタリング機能を備えています。")
-            st.markdown(
-                '<span class="app-badge">1 worker</span>'
-                f'<span class="app-badge">{AUTO_REFRESH_SECONDS}s refresh</span>'
-                f'<span class="app-badge">{SESSION_RETENTION_DAYS} day retention</span>',
-                unsafe_allow_html=True,
-            )
-        with right:
-            if st.button(":material/delete_sweep: クリーンアップを実行", type="secondary"):
-                result = run_cleanup()
-                st.success(
-                    f"クリーンアップ完了: 待機エントリー {result['queue_entries_removed']}件、期限切れセッション {result['sessions_deleted']}件を削除しました。"
-                )
-
-
 @st.fragment(run_every=AUTO_REFRESH_SECONDS)
 def sidebar_monitor_fragment() -> None:
     snapshot = system_snapshot()
@@ -2171,33 +2151,6 @@ def sidebar_monitor_fragment() -> None:
         log_text = tail_text(WORKER_LOG_FILE, max_lines=80) or "No worker log yet."
         log_text = format_worker_log_time(log_text)
         st.text_area("Log", value=log_text, height=200, disabled=True, label_visibility="collapsed")
-
-
-def render_sidebar() -> None:
-    with st.sidebar:
-        sidebar_monitor_fragment()
-
-        st.markdown("## :material/tune: 共有利用ノート")
-        st.markdown(
-            """
-- セッションは手動クリーンアップしない限り 30 日間保持されます。
-- ジョブは共有キュー上で 1 件ずつ実行されます。
-- 実行中ジョブの停止、待機ジョブの順序変更または削除が可能です。
-- セッションフォルダーとジョブフォルダーはZIPアーカイブとしてダウンロードできます。
-"""
-        )
-        with st.expander("Dependency check", expanded=False):
-            for row in dependency_rows():
-                color = "green" if row["status"] == "ready" else "orange"
-                st.markdown(f"- `{row['package']}` :{color}[{row['status']}]")
-                st.caption(row["label"])
-
-        with st.expander("Sample inputs", expanded=False):
-            sample_cases = list_sample_cases()
-            if not sample_cases:
-                st.caption("`core/sample_input/` に bundled sample pair が見つかりません。")
-            for name in sample_cases:
-                st.write(f"- `{name}`")
 
 
 def render_queue_panel() -> None:
