@@ -3664,3 +3664,4 @@ def render_job_results(job: dict) -> None:
             selected = image_files[labels.index(st.selectbox("Image file", labels, key=f"img_{job['job_id']}"))]
             st.image(str(selected))
         else:
+            st.info("imageファイルはありません。")
