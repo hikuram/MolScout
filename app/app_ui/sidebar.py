@@ -18,39 +18,79 @@ from app_ui.views import (
 
 SELECTED_SESSION_STATE_KEY = "selected_session_id"
 SESSION_SELECTOR_WIDGET_KEY = "session_selector_id"
+SESSION_QUERY_PARAM_KEY = "session"
+APPLIED_QUERY_SESSION_STATE_KEY = "selected_session_query_applied"
+PENDING_WIDGET_SESSION_STATE_KEY = "selected_session_widget_pending"
+
+
+def current_query_session_id() -> str:
+    """Return the session ID from the current URL query parameter."""
+    raw_value = st.query_params.get(SESSION_QUERY_PARAM_KEY)
+    if isinstance(raw_value, list):
+        raw_value = raw_value[0] if raw_value else ""
+    return str(raw_value or "")
+
 
 def persist_selected_session(session_id: str) -> None:
     """Keep internal state and URL params in sync."""
     st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
-    st.query_params["session"] = session_id
+    st.session_state[APPLIED_QUERY_SESSION_STATE_KEY] = session_id
+    st.query_params[SESSION_QUERY_PARAM_KEY] = session_id
+
 
 def sync_selected_session_from_widget() -> None:
     """Sync state from sidebar selectbox."""
     selected = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
     if selected:
+        st.session_state[PENDING_WIDGET_SESSION_STATE_KEY] = str(selected)
         persist_selected_session(str(selected))
 
-def resolve_selected_session_id(sessions: list[dict]) -> str:
-    """Resolve active session ID safely (URL -> State -> Default)."""
-    session_ids = [item["session_id"] for item in sessions]
 
-    # 1. Check URL
-    url_session = st.query_params.get("session")
-    if url_session in session_ids:
-        st.session_state[SELECTED_SESSION_STATE_KEY] = url_session
+def resolve_selected_session_id(sessions: list[dict]) -> str:
+    """Resolve active session ID safely for each browser session.
+
+    A just-clicked selectbox value is protected so it cannot be overwritten by
+    a stale query parameter during the same rerun. URL values are still honored
+    on initial load and when the browser URL changes externally.
+    """
+    session_ids = [item["session_id"] for item in sessions]
+    url_session = current_query_session_id()
+
+    # 1. Trust a widget change that was just delivered by the selectbox callback.
+    pending_widget_session = st.session_state.get(PENDING_WIDGET_SESSION_STATE_KEY, "")
+    if pending_widget_session in session_ids:
+        if url_session == pending_widget_session:
+            st.session_state.pop(PENDING_WIDGET_SESSION_STATE_KEY, None)
+        persist_selected_session(str(pending_widget_session))
+        return str(pending_widget_session)
+
+    # 2. Honor URL only when it has not already been applied. This keeps
+    #    initial deep links and browser navigation working without making a
+    #    stale URL win over a fresh selectbox change.
+    applied_url_session = st.session_state.get(APPLIED_QUERY_SESSION_STATE_KEY)
+    if url_session in session_ids and url_session != applied_url_session:
+        persist_selected_session(url_session)
         return url_session
 
-    # 2. Check Session State
+    # 3. Check the widget. This keeps the per-browser Streamlit state isolated.
+    widget_session = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
+    if widget_session in session_ids:
+        local_session = st.session_state.get(SELECTED_SESSION_STATE_KEY)
+        if widget_session != local_session:
+            persist_selected_session(str(widget_session))
+        return str(widget_session)
+
+    # 4. Check Session State
     local_session = st.session_state.get(SELECTED_SESSION_STATE_KEY)
     if local_session in session_ids:
-        st.query_params["session"] = local_session
+        persist_selected_session(str(local_session))
         return local_session
 
-    # 3. Fallback to first session
+    # 5. Fallback to first session
     fallback = session_ids[0] if session_ids else ""
     if fallback:
         persist_selected_session(fallback)
-        
+
     return fallback
 
 @st.dialog("新規セッション作成")
