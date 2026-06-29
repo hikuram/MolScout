@@ -1172,6 +1172,25 @@ def process_batch_frames():
         except Exception as e:
             log("Warn", f"An error occurred while writing {g.R_CSV}: {e}")
 
+    def optimized_energy_values(atoms, label):
+        try:
+            energy_ev = atoms.get_potential_energy()
+        except Exception as e:
+            log("Warn", f"Could not record optimized energy for {label}: {e}")
+            return None
+        return [
+            energy_ev,
+            energy_ev * g.EV_TO_HARTREE,
+            energy_ev * g.EV_TO_KCAL_MOL,
+        ]
+
+    def refresh_relative_energies():
+        if "energy [kcal/mol]" not in df_new.columns or not df_new["energy [kcal/mol]"].notna().any():
+            df_new["Delta E vs. reactant [kcal/mol]"] = None
+            return
+        ref = df_new.loc[0, "energy [kcal/mol]"]
+        df_new["Delta E vs. reactant [kcal/mol]"] = df_new["energy [kcal/mol]"] - ref
+
     t_opt_sum = 0
     t_vib_sum = 0
     t_refine_sum = 0
@@ -1184,18 +1203,30 @@ def process_batch_frames():
         if getattr(g, 'REFINE_INPUT_ON', False):
             t_opt_start = timepfc()
             log("Opt", f"Optimizing structure for {base_name} ...")
+            optimized_img = None
             try:
                 if getattr(g, 'USE_SELLA_IN_OPT', False):
-                    opt_sella_img(frame_file)
+                    optimized_img = opt_sella_img(frame_file)
                 else:
-                    opt_img(frame_file)
+                    optimized_img = opt_img(frame_file)
                 target_xyz = base_name + "_opt.xyz"
             except Exception as e:
                 log("Warn", f"Optimization failed for {base_name}: {e}")
             
             t_opt = timepfc() - t_opt_start
             t_opt_sum += t_opt
-            write_result('time_opt [s]', t_opt, idx)
+            if optimized_img is None:
+                write_result('time_opt [s]', t_opt, idx)
+            else:
+                opt_energy = optimized_energy_values(optimized_img, target_xyz)
+                if opt_energy is None:
+                    write_result('time_opt [s]', t_opt, idx)
+                else:
+                    write_result(
+                        ['time_opt [s]', 'energy [eV]', 'energy [hartree]', 'energy [kcal/mol]'],
+                        [t_opt] + opt_energy,
+                        idx
+                    )
 
         # == 2. Vibrational Analysis ==
         if getattr(g, 'VIB_ON', False):
@@ -1252,6 +1283,12 @@ def process_batch_frames():
                     G_refine_kcal = energy_ref_kcal + thermal_corr_G
                     write_result('G_refine [kcal/mol] (HL//LL)', G_refine_kcal, idx)
 
+    refresh_relative_energies()
+    try:
+        df_new.to_csv(g.R_CSV, index=False)
+    except Exception as e:
+        log("Warn", f"An error occurred while writing {g.R_CSV}: {e}")
+
     # Log total times
     if getattr(g, 'REFINE_INPUT_ON', False):
         write_line(g.TIME_LOG_NAME, f"* Optimize_Total        | {t_opt_sum:>12.2f} s  *\n")
@@ -1259,6 +1296,34 @@ def process_batch_frames():
         write_line(g.TIME_LOG_NAME, f"* Vibrations_Total      | {t_vib_sum:>12.2f} s  *\n")
     if getattr(g, 'REFINE_ENERGY_ON', False):
         write_line(g.TIME_LOG_NAME, f"* Refinement_Total      | {t_refine_sum:>12.2f} s  *\n")
+
+
+def csv_has_missing_initial_energies(csv_file):
+    energy_columns = ["energy [eV]", "energy [hartree]", "energy [kcal/mol]"]
+    try:
+        df = pd.read_csv(csv_file)
+    except Exception as e:
+        log("Warn", f"Could not inspect initial energy CSV {csv_file}: {e}")
+        return True
+
+    if df.empty:
+        return True
+    if any(column not in df.columns for column in energy_columns):
+        return True
+    return df[energy_columns].isna().any().any()
+
+
+def write_cat_initial_energies(traj_name, csv_name):
+    write_energies(traj_name, csv_name)
+    if getattr(g, 'REFINE_INPUT_ON', False):
+        return
+    if not csv_has_missing_initial_energies(csv_name):
+        return
+
+    log("Info", f"{csv_name} has missing CAT initial energies; recalculating frame energies.")
+    write_energies(traj_name, csv_name, energy_recalc=True)
+    if csv_has_missing_initial_energies(csv_name):
+        log("Warn", f"{csv_name} still contains missing CAT initial energies after recalculation.")
 
 
 if __name__ == '__main__':
@@ -1361,7 +1426,7 @@ if __name__ == '__main__':
             concat_files = getattr(g, 'CONCAT_FILES', [])
             generate_path_concat(concat_files, output_traj="init_path.traj")
             g.I_TRAJ = "init_path.traj"
-            write_energies(g.I_TRAJ, g.R_CSV)
+            write_cat_initial_energies(g.I_TRAJ, g.R_CSV)
             process_batch_frames()
         # Standard Route (Path Generation -> Peak Extraction -> TS/IRC)
         else:
