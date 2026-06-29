@@ -2409,6 +2409,53 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     return {key: value for key, value in profile.items() if value not in ("", None)}
 
 
+PYSCF_XC_CANDIDATES = [
+    "hf",
+    "pbe0",
+    "b3lyp",
+    "m06-x",
+    "wb97m-v",
+    "wb97x-d",
+    "skala-1.1",
+    "b973c",
+    "r2scan3c",
+    "wb97x3c",
+]
+
+
+PYSCF_BASIS_CANDIDATES = [
+    "sto-3g",
+    "6-31g*",
+    "6-311++g**",
+    "def2-svp",
+    "def2-tzvp",
+    "def2-tzvpp",
+    "def2-tzvpd",
+    "ma-def2-svp",
+    "ma-def2-tzvp",
+    "aug-cc-pvtz",
+]
+
+
+@st.dialog("XC / Basis 候補")
+def render_pyscf_candidate_dialog() -> None:
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown("#### XC")
+        st.dataframe(
+            pd.DataFrame({"candidate": PYSCF_XC_CANDIDATES}),
+            hide_index=True,
+            width="stretch",
+        )
+    with cols[1]:
+        st.markdown("#### Basis")
+        st.dataframe(
+            pd.DataFrame({"candidate": PYSCF_BASIS_CANDIDATES}),
+            hide_index=True,
+            width="stretch",
+        )
+
+
 PYSCF_PROFILE_WIDGET_FIELDS = [
     "xc",
     "basis",
@@ -2546,7 +2593,10 @@ def render_session_config(session: dict) -> None:
     config = json.loads(json.dumps(session.get("pyscf_config", default_pyscf_config())))
     presets = dict(config.get("presets", {}))
     with st.container(border=True):
+        if st.button(":material/help: XC / Basis 候補", key=f"{session['session_id']}_pyscf_candidates_help"):
+            render_pyscf_candidate_dialog()
         if presets:
+            st.divider()
             render_pyscf_copy_controls(session["session_id"], config, presets)
             st.divider()
         pyscf_prefix = f"{session['session_id']}_pyscf"
