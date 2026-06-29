@@ -39,7 +39,10 @@ def get_pyscf_profile(calc_type):
 
     profile = dict(config[calc_type])
     profile["calc_type"] = calc_type
+    
     profile["is_3c"] = str(profile.get("xc", "")).endswith("3c")
+    profile["is_skala"] = str(profile.get("xc", "")).startswith("skala")
+    
     _PYSCF_PROFILE_CACHE[calc_type] = profile
     return profile
 
@@ -59,12 +62,27 @@ def build_pyscf_method_common(atoms, base_name, profile):
         output=base_name + '_pyscf.log',
         verbose=profile.get("verbose", 4)
     )
-    mf = mol.RKS(
-        xc=profile["xc"],
-        disp=profile.get("disp"),
-        conv_tol=profile.get("conv_tol", 6e-10),
-        max_cycle=profile.get("max_cycle", 400)
-    )
+
+    is_skala = profile.get("is_skala", False)
+
+    if is_skala:
+        if g.DEVICE == "cuda":
+            from skala.gpu4pyscf import SkalaKS
+        else:
+            from skala.pyscf import SkalaKS
+            
+        mf = SkalaKS(mol, xc=profile["xc"])
+        mf.conv_tol = profile.get("conv_tol", 6e-10)
+        mf.max_cycle = profile.get("max_cycle", 400)
+        if profile.get("disp"):
+            mf.disp = profile["disp"]
+    else:
+        mf = mol.RKS(
+            xc=profile["xc"],
+            disp=profile.get("disp"),
+            conv_tol=profile.get("conv_tol", 6e-10),
+            max_cycle=profile.get("max_cycle", 400)
+        )
 
     if profile.get("with_solvent", False):
         solvent_model = str(profile.get("solvent_model", "")).upper()
@@ -82,7 +100,9 @@ def build_pyscf_method_common(atoms, base_name, profile):
 
     if g.DEVICE == "cuda":
         cupy.get_default_memory_pool().free_all_blocks()
-        mf = mf.to_gpu()
+        if not is_skala:
+            mf = mf.to_gpu()
+            
     return mf
 
 def build_pyscf_standard(atoms, base_name, profile):
