@@ -19,7 +19,7 @@ def build_method(config: Dict[str, Any]):
     disp = config.get("disp", None)
     verbose = config.get("verbose", 4)
     scf_conv_tol = config.get("scf_conv_tol", 1e-8)
-    direct_scf_tol = config.get("direct_scf_tol", 1e-8)
+    direct_scf_tol = config.get("direct_scf_tol", 1e-14)
     scf_max_cycle = config.get("scf_max_cycle", 50)
     with_df = config.get("with_df", True)
     auxbasis = config.get("auxbasis", "def2-universal-jkfit")
