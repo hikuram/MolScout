@@ -21,6 +21,7 @@ def build_method(config: Dict[str, Any]):
     scf_conv_tol = config.get("scf_conv_tol", 1e-8)
     direct_scf_tol = config.get("direct_scf_tol", 1e-14)
     scf_max_cycle = config.get("scf_max_cycle", 50)
+    init_guess = config.get("init_guess", None)
     with_df = config.get("with_df", True)
     auxbasis = config.get("auxbasis", "def2-universal-jkfit")
     with_gpu = config.get("with_gpu", True)
@@ -100,6 +101,8 @@ def build_method(config: Dict[str, Any]):
 
     mf.direct_scf_tol = float(direct_scf_tol)
     mf.chkfile = None
+    if init_guess is not None:
+        mf.init_guess = str(init_guess)
     mf.conv_tol = float(scf_conv_tol)
     mf.max_cycle = scf_max_cycle
     return mf
@@ -120,6 +123,7 @@ def build_3c_method(config: Dict[str, Any]):
     cfg["nlc"] = nlc
     cfg["basis"] = basis
     cfg["ecp"] = ecp
+    cfg.setdefault("init_guess", "vsap")
 
     mf = build_method(cfg)
     mf.get_dispersion = MethodType(gen_disp_fun(xc_disp, xc_gcp), mf)
