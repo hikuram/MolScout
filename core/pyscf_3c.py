@@ -21,7 +21,7 @@ def build_method(config: Dict[str, Any]):
     scf_conv_tol = config.get("scf_conv_tol", 1e-8)
     direct_scf_tol = config.get("direct_scf_tol", 1e-14)
     scf_max_cycle = config.get("scf_max_cycle", 50)
-    level_shift = config.get("level_shift", config.get("scf_level_shift", None))
+    scf_level_shift = config.get("scf_level_shift", None)
     with_df = config.get("with_df", True)
     auxbasis = config.get("auxbasis", "def2-universal-jkfit")
     with_gpu = config.get("with_gpu", True)
@@ -101,8 +101,8 @@ def build_method(config: Dict[str, Any]):
 
     mf.direct_scf_tol = float(direct_scf_tol)
     mf.chkfile = config.get("chkfile", None)
-    if level_shift is not None:
-        mf.level_shift = float(level_shift)
+    if scf_level_shift is not None:
+        mf.level_shift = float(scf_level_shift)
     mf.conv_tol = float(scf_conv_tol)
     mf.max_cycle = int(scf_max_cycle)
     mf._pyscf_3c_config = dict(config)
