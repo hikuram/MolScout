@@ -123,7 +123,7 @@ def build_3c_method(config: Dict[str, Any]):
     cfg["xc"] = pyscf_xc
     cfg["nlc"] = nlc
     cfg["basis"] = basis
-    cfg["ecp"] = ecp
+    cfg["ecp"] = ecp or config.get("ecp", "def2-svp")
 
     mf = build_method(cfg)
     mf.get_dispersion = MethodType(gen_disp_fun(xc_disp, xc_gcp), mf)
