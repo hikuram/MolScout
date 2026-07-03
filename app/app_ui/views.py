@@ -2369,6 +2369,8 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     eps_default = 78.3553 if profile.get("eps") is None else float(profile.get("eps"))
     eps_enabled = cols[3].checkbox("custom eps", value=profile.get("eps") is not None, key=f"{prefix}_eps_enabled", disabled=not profile["with_solvent"])
 
+    profile.pop("level_shift", None)
+
     cols = st.columns(4)
     profile["conv_tol"] = None
     conv_enabled = cols[0].checkbox("custom conv_tol", value=profile.get("conv_tol") is not None, key=f"{prefix}_conv_tol_enabled")
@@ -2377,12 +2379,20 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     else:
         cols[1].caption("conv_tol: default")
 
-    profile["disp"] = None
-    disp_enabled = cols[2].checkbox("dispersion keyword", value=profile.get("disp") is not None, key=f"{prefix}_disp_enabled")
-    if disp_enabled:
-        profile["disp"] = clean_optional_text(cols[3].text_input("Dispersion", value=str(profile.get("disp", "")), key=f"{prefix}_disp"))
+    profile["scf_level_shift"] = None
+    scf_level_shift_enabled = cols[2].checkbox("SCF level shift", value=profile.get("scf_level_shift") is not None, key=f"{prefix}_scf_level_shift_enabled")
+    if scf_level_shift_enabled:
+        profile["scf_level_shift"] = float(cols[3].number_input("SCF level shift value", value=float(number_default(profile.get("scf_level_shift"), 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
     else:
-        cols[3].caption("disp: none")
+        cols[3].caption("SCF level shift: none")
+
+    cols = st.columns(4)
+    profile["disp"] = None
+    disp_enabled = cols[0].checkbox("dispersion keyword", value=profile.get("disp") is not None, key=f"{prefix}_disp_enabled")
+    if disp_enabled:
+        profile["disp"] = clean_optional_text(cols[1].text_input("Dispersion", value=str(profile.get("disp", "")), key=f"{prefix}_disp"))
+    else:
+        cols[1].caption("disp: none")
 
     cols = st.columns(3)
     grids_enabled = cols[0].checkbox("custom grids", value=profile.get("grids_level") is not None, key=f"{prefix}_grids_enabled")
@@ -2469,6 +2479,8 @@ PYSCF_PROFILE_WIDGET_FIELDS = [
     "eps_enabled",
     "conv_tol",
     "conv_tol_enabled",
+    "scf_level_shift",
+    "scf_level_shift_enabled",
     "disp",
     "disp_enabled",
     "grids_level",
@@ -2539,6 +2551,9 @@ def pyscf_profile_from_state(prefix: str, fallback: dict) -> dict:
         profile["eps"] = float(state_number("eps", 78.3553))
     if st.session_state.get(f"{prefix}_conv_tol_enabled", fallback.get("conv_tol") is not None):
         profile["conv_tol"] = float(state_number("conv_tol", 1e-8))
+    if st.session_state.get(f"{prefix}_scf_level_shift_enabled", fallback.get("scf_level_shift") is not None):
+        scf_level_shift = st.session_state.get(f"{prefix}_scf_level_shift", fallback.get("scf_level_shift"))
+        profile["scf_level_shift"] = float(0.1 if scf_level_shift is None else scf_level_shift)
     if st.session_state.get(f"{prefix}_disp_enabled", fallback.get("disp") is not None):
         profile["disp"] = text_value("disp")
     if st.session_state.get(f"{prefix}_grids_enabled", fallback.get("grids_level") is not None):
@@ -2585,10 +2600,10 @@ def render_session_config(session: dict) -> None:
     st.caption("PySCFの設定はこのセッションのメタデータに保存されます。これらの値から ジョブローカルのJSONが生成されます。")
 
     state_version_key = f"{session['session_id']}_pyscf_config_state_version"
-    if st.session_state.get(state_version_key) != 2:
+    if st.session_state.get(state_version_key) != 3:
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf")
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf_high")
-        st.session_state[state_version_key] = 2
+        st.session_state[state_version_key] = 3
 
     config = json.loads(json.dumps(session.get("pyscf_config", default_pyscf_config())))
     presets = dict(config.get("presets", {}))
