@@ -2370,26 +2370,28 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     eps_enabled = cols[3].checkbox("custom eps", value=profile.get("eps") is not None, key=f"{prefix}_eps_enabled", disabled=not profile["with_solvent"])
 
     cols = st.columns(4)
+    conv_tol_default = profile.get("conv_tol")
+    conv_enabled = cols[0].checkbox("custom conv_tol", value=conv_tol_default is not None, key=f"{prefix}_conv_tol_enabled")
     profile["conv_tol"] = None
-    conv_enabled = cols[0].checkbox("custom conv_tol", value=profile.get("conv_tol") is not None, key=f"{prefix}_conv_tol_enabled")
     if conv_enabled:
-        profile["conv_tol"] = float(cols[1].number_input("conv_tol", min_value=1e-12, value=float(number_default(profile.get("conv_tol"), 1e-8)), step=1e-8, format="%.2e", key=f"{prefix}_conv_tol"))
+        profile["conv_tol"] = float(cols[1].number_input("conv_tol", min_value=1e-12, value=float(number_default(conv_tol_default, 1e-8)), step=1e-8, format="%.2e", key=f"{prefix}_conv_tol"))
     else:
         cols[1].caption("conv_tol: default")
 
-    profile["scf_level_shift"] = None
     level_shift_default = profile.get("scf_level_shift")
     level_shift_enabled = cols[2].checkbox("レベルシフトを使う", value=level_shift_default is not None, key=f"{prefix}_scf_level_shift_enabled")
+    profile["scf_level_shift"] = None
     if level_shift_enabled:
         profile["scf_level_shift"] = float(cols[3].number_input("レベルシフト値", min_value=0.0, value=float(number_default(level_shift_default, 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
     else:
         cols[3].caption("レベルシフト: none")
 
     cols = st.columns(4)
+    disp_default = profile.get("disp")
+    disp_enabled = cols[0].checkbox("dispersion keyword", value=disp_default is not None, key=f"{prefix}_disp_enabled")
     profile["disp"] = None
-    disp_enabled = cols[0].checkbox("dispersion keyword", value=profile.get("disp") is not None, key=f"{prefix}_disp_enabled")
     if disp_enabled:
-        profile["disp"] = clean_optional_text(cols[1].text_input("Dispersion", value=str(profile.get("disp", "")), key=f"{prefix}_disp"))
+        profile["disp"] = clean_optional_text(cols[1].text_input("Dispersion", value=str(disp_default or ""), key=f"{prefix}_disp"))
     else:
         cols[1].caption("disp: none")
 
