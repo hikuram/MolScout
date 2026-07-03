@@ -130,6 +130,8 @@ def build_pyscf_3c(atoms, base_name, profile):
 
     if profile.get("conv_tol") is not None:
         config["scf_conv_tol"] = profile["conv_tol"]
+    if profile.get("scf_level_shift") is not None:
+        config["scf_level_shift"] = profile["scf_level_shift"]
     if "max_cycle" in profile:
         config["scf_max_cycle"] = profile["max_cycle"]
     if profile.get("grids_level") is not None:
