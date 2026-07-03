@@ -2369,8 +2369,6 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     eps_default = 78.3553 if profile.get("eps") is None else float(profile.get("eps"))
     eps_enabled = cols[3].checkbox("custom eps", value=profile.get("eps") is not None, key=f"{prefix}_eps_enabled", disabled=not profile["with_solvent"])
 
-    profile.pop("level_shift", None)
-
     cols = st.columns(4)
     profile["conv_tol"] = None
     conv_enabled = cols[0].checkbox("custom conv_tol", value=profile.get("conv_tol") is not None, key=f"{prefix}_conv_tol_enabled")
@@ -2380,11 +2378,12 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
         cols[1].caption("conv_tol: default")
 
     profile["scf_level_shift"] = None
-    scf_level_shift_enabled = cols[2].checkbox("SCF level shift", value=profile.get("scf_level_shift") is not None, key=f"{prefix}_scf_level_shift_enabled")
-    if scf_level_shift_enabled:
-        profile["scf_level_shift"] = float(cols[3].number_input("SCF level shift value", value=float(number_default(profile.get("scf_level_shift"), 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
+    level_shift_default = profile.get("scf_level_shift")
+    level_shift_enabled = cols[2].checkbox("レベルシフトを使う", value=level_shift_default is not None, key=f"{prefix}_scf_level_shift_enabled")
+    if level_shift_enabled:
+        profile["scf_level_shift"] = float(cols[3].number_input("レベルシフト値", min_value=0.0, value=float(number_default(level_shift_default, 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
     else:
-        cols[3].caption("SCF level shift: none")
+        cols[3].caption("レベルシフト: none")
 
     cols = st.columns(4)
     profile["disp"] = None
@@ -2552,8 +2551,8 @@ def pyscf_profile_from_state(prefix: str, fallback: dict) -> dict:
     if st.session_state.get(f"{prefix}_conv_tol_enabled", fallback.get("conv_tol") is not None):
         profile["conv_tol"] = float(state_number("conv_tol", 1e-8))
     if st.session_state.get(f"{prefix}_scf_level_shift_enabled", fallback.get("scf_level_shift") is not None):
-        scf_level_shift = st.session_state.get(f"{prefix}_scf_level_shift", fallback.get("scf_level_shift"))
-        profile["scf_level_shift"] = float(0.1 if scf_level_shift is None else scf_level_shift)
+        level_shift = st.session_state.get(f"{prefix}_scf_level_shift", fallback.get("scf_level_shift"))
+        profile["scf_level_shift"] = float(0.1 if level_shift is None else level_shift)
     if st.session_state.get(f"{prefix}_disp_enabled", fallback.get("disp") is not None):
         profile["disp"] = text_value("disp")
     if st.session_state.get(f"{prefix}_grids_enabled", fallback.get("grids_level") is not None):
