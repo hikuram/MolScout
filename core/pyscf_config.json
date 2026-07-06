@@ -1,7 +1,7 @@
 {
   "pyscf": {
     "xc": "r2scan3c",
-    "ecp": "def2-ECP",
+    "ecp": "def2-SVP",
     "with_df": true,
     "auxbasis": "def2-universal-jfit",
     "max_cycle": 200,
@@ -31,7 +31,7 @@
   "presets": {
     "L1_fast": {
       "xc": "b973c",
-      "ecp": "def2-ECP",
+      "ecp": "def2-SVP",
       "with_df": true,
       "auxbasis": "def2-universal-jfit",
       "max_cycle": 200,
@@ -42,7 +42,7 @@
     },
     "L2_standard": {
       "xc": "r2scan3c",
-      "ecp": "def2-ECP",
+      "ecp": "def2-SVP",
       "with_df": true,
       "auxbasis": "def2-universal-jfit",
       "max_cycle": 200,
