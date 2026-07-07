@@ -22,7 +22,7 @@
 ## Directory layout
 
 - `app/streamlit_app.py`: main Streamlit entry point and top navigation
-- `app/app_pages/`: Queue、Submit、Results、PySCF、About の page modules
+- `app/app_pages/`: Queue、Submit、Results、Chemiscope、PySCF、About の page modules
 - `app/app_ui/`: shared Streamlit UI helpers and reusable view functions
 - `app/app_core/`: queue、session、monitoring、cleanup、archive、workflow helpers
 - `app/data/sessions/`: session ごとの working directories
@@ -35,6 +35,7 @@
 - `Queue`: 共有キューと選択中セッションの概要を表示します。
 - `Submit`: 反応経路探索とファイル連結処理の job を投入します。
 - `Results`: セッション内 job、ログ、結果ファイル、ZIP download を確認します。
+- `Chemiscope`: 選択中セッション内の `.traj` / `.xyz` / `.extxyz` を chemiscope で可視化します。
 - `PySCF`: 選択中セッションの PySCF 設定を編集します。
 - `About`: application overview と page guide を表示します。
 
@@ -71,6 +72,7 @@ streamlit run app/streamlit_app.py
 - built-in sample reactant/product pair は `core/sample_input/` から読み取ります。
 - figure-refresh job には trajectory (`.traj` または `.xyz`) と既存 result CSV の両方が必要です。
 - 使用中の Streamlit version が fragments に対応している場合、monitoring panel は 5 秒ごとに更新されます。
+- Chemiscope page には `chemiscope[streamlit]` が必要です。`app/requirements.txt` に app 追加依存をまとめています。
 
 ## SCAN GUI notes
 
