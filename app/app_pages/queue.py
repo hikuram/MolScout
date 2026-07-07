@@ -9,7 +9,7 @@ from app_ui.views import render_queue_panel, render_session_overview
 from app_ui.sidebar import get_selected_session
 
 from app_core.queue_manager import sync_queue_state
-from app_core.job_runner import reload_job
+from app_core.job_runner import molscout_log_candidates, reload_job
 from app_core.utils import tail_text
 
 st.markdown("## :material/lan: Queue")
@@ -18,7 +18,7 @@ st.caption("共有キューと、選択中セッションの概要を確認し�
 render_queue_panel()
 
 st.divider()
-st.markdown("### :material/terminal: Running Logs (stdout)")
+st.markdown("### :material/terminal: Running Logs (molscout.log)")
 queue_state = sync_queue_state()
 running_items = [item for item in queue_state["jobs"] if item["status"] == "running"]
 
@@ -32,12 +32,14 @@ else:
 
         st.markdown(f"**Job ID:** `{job['job_id']}` (Session: `{item['session_id']}`)")
 
-        stdout_path = Path(job.get("stdout_log", ""))
+        output_dir = Path(job.get("output_dir", ""))
+        log_path = next((path for path in molscout_log_candidates(output_dir) if path.exists()), None)
 
-        if stdout_path.exists():
-            st.code(tail_text(stdout_path, max_lines=200) or "(empty file)", language="text")
+        if log_path:
+            st.caption(f"log file: `{log_path.relative_to(output_dir)}`")
+            st.code(tail_text(log_path, max_lines=200) or "(empty file)", language="text")
         else:
-            st.caption("stdout.log はまだ生成されていません。")
+            st.caption("molscout.log はまだ生成されていません。")
 
 st.divider()
 st.markdown("### :material/group_work: 選択中セッション")
