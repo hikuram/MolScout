@@ -18,14 +18,6 @@ st.caption("共有キューと、選択中セッションの概要を確認し�
 render_queue_panel()
 
 st.divider()
-st.markdown("### :material/group_work: 選択中セッション")
-session = get_selected_session()
-if session:
-    render_session_overview(session)
-else:
-    st.info("サイドバーからセッションを作成してください。")
-
-st.divider()
 st.markdown("### :material/terminal: Running Logs (stdout)")
 queue_state = sync_queue_state()
 running_items = [item for item in queue_state["jobs"] if item["status"] == "running"]
@@ -37,12 +29,20 @@ else:
         job = reload_job(item["session_id"], item["job_id"])
         if not job:
             continue
-        
+
         st.markdown(f"**Job ID:** `{job['job_id']}` (Session: `{item['session_id']}`)")
-        
+
         stdout_path = Path(job.get("stdout_log", ""))
-        
+
         if stdout_path.exists():
             st.code(tail_text(stdout_path, max_lines=200) or "(empty file)", language="text")
         else:
             st.caption("stdout.log はまだ生成されていません。")
+
+st.divider()
+st.markdown("### :material/group_work: 選択中セッション")
+session = get_selected_session()
+if session:
+    render_session_overview(session)
+else:
+    st.info("サイドバーからセッションを作成してください。")
