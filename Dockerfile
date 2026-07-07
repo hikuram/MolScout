@@ -58,6 +58,7 @@ RUN pip3 install streamlit
 RUN pip3 install pandas morfeus-ml ase rmsd cyipopt pydmf
 RUN pip3 install git+https://github.com/hikuram/sella.git@test
 RUN pip3 install skala
+RUN pip3 install chemiscope[streamlit]
 
 # alpb may require tblite>=0.5.0
 RUN pip3 install meson ninja
