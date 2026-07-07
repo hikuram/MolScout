@@ -50,7 +50,7 @@ def apply_workflow_flags(args: argparse.Namespace) -> None:
     g.VIB_ON = bool(args.vib)
     g.REFINE_ENERGY_ON = bool(args.refine)
     g.OTHER_JOBS_EXAMPLE_ON = False
-    g.WRITE_SUGGESTIONS_ON = bool(args.irc or args.initial_path or is_cat_mode)
+    g.WRITE_SUGGESTIONS_ON = False
     g.SAVE_FIG_ON = True
     g.PRESERVE_CSV_ON = args.workflow == "Figure refresh only"
     g.THERMO_TEMPERATURE = float(args.temperature)
