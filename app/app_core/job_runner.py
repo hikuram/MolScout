@@ -298,7 +298,7 @@ set +e
 RUNTIME_FILE={runtime_file_q}
 EXIT_FILE={exit_file_q}
 write_runtime() {{
-  python - "$RUNTIME_FILE" "$1" "$2" "$3" <<'PY'
+  python3 - "$RUNTIME_FILE" "$1" "$2" "$3" <<'PY'
 import json
 import os
 import sys
