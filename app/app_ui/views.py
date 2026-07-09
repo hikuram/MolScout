@@ -2370,19 +2370,30 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     eps_enabled = cols[3].checkbox("custom eps", value=profile.get("eps") is not None, key=f"{prefix}_eps_enabled", disabled=not profile["with_solvent"])
 
     cols = st.columns(4)
+    conv_tol_default = profile.get("conv_tol")
+    conv_enabled = cols[0].checkbox("custom conv_tol", value=conv_tol_default is not None, key=f"{prefix}_conv_tol_enabled")
     profile["conv_tol"] = None
-    conv_enabled = cols[0].checkbox("custom conv_tol", value=profile.get("conv_tol") is not None, key=f"{prefix}_conv_tol_enabled")
     if conv_enabled:
-        profile["conv_tol"] = float(cols[1].number_input("conv_tol", min_value=1e-12, value=float(number_default(profile.get("conv_tol"), 1e-8)), step=1e-8, format="%.2e", key=f"{prefix}_conv_tol"))
+        profile["conv_tol"] = float(cols[1].number_input("conv_tol", min_value=1e-12, value=float(number_default(conv_tol_default, 1e-8)), step=1e-8, format="%.2e", key=f"{prefix}_conv_tol"))
     else:
         cols[1].caption("conv_tol: default")
 
-    profile["disp"] = None
-    disp_enabled = cols[2].checkbox("dispersion keyword", value=profile.get("disp") is not None, key=f"{prefix}_disp_enabled")
-    if disp_enabled:
-        profile["disp"] = clean_optional_text(cols[3].text_input("Dispersion", value=str(profile.get("disp", "")), key=f"{prefix}_disp"))
+    level_shift_default = profile.get("scf_level_shift")
+    level_shift_enabled = cols[2].checkbox("レベルシフトを使う", value=level_shift_default is not None, key=f"{prefix}_scf_level_shift_enabled")
+    profile["scf_level_shift"] = None
+    if level_shift_enabled:
+        profile["scf_level_shift"] = float(cols[3].number_input("レベルシフト値", min_value=0.0, value=float(number_default(level_shift_default, 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
     else:
-        cols[3].caption("disp: none")
+        cols[3].caption("レベルシフト: none")
+
+    cols = st.columns(4)
+    disp_default = profile.get("disp")
+    disp_enabled = cols[0].checkbox("dispersion keyword", value=disp_default is not None, key=f"{prefix}_disp_enabled")
+    profile["disp"] = None
+    if disp_enabled:
+        profile["disp"] = clean_optional_text(cols[1].text_input("Dispersion", value=str(disp_default or ""), key=f"{prefix}_disp"))
+    else:
+        cols[1].caption("disp: none")
 
     cols = st.columns(3)
     grids_enabled = cols[0].checkbox("custom grids", value=profile.get("grids_level") is not None, key=f"{prefix}_grids_enabled")
@@ -2409,6 +2420,53 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
     return {key: value for key, value in profile.items() if value not in ("", None)}
 
 
+PYSCF_XC_CANDIDATES = [
+    "hf",
+    "pbe0",
+    "b3lyp",
+    "m06-x",
+    "wb97m-v",
+    "wb97x-d",
+    "skala-1.1",
+    "b973c",
+    "r2scan3c",
+    "wb97x3c",
+]
+
+
+PYSCF_BASIS_CANDIDATES = [
+    "sto-3g",
+    "6-31g*",
+    "6-311++g**",
+    "def2-svp",
+    "def2-tzvp",
+    "def2-tzvpp",
+    "def2-tzvpd",
+    "ma-def2-svp",
+    "ma-def2-tzvp",
+    "aug-cc-pvtz",
+]
+
+
+@st.dialog("XC / Basis 候補")
+def render_pyscf_candidate_dialog() -> None:
+    cols = st.columns(2)
+    with cols[0]:
+        st.markdown("#### XC")
+        st.dataframe(
+            pd.DataFrame({"candidate": PYSCF_XC_CANDIDATES}),
+            hide_index=True,
+            width="stretch",
+        )
+    with cols[1]:
+        st.markdown("#### Basis")
+        st.dataframe(
+            pd.DataFrame({"candidate": PYSCF_BASIS_CANDIDATES}),
+            hide_index=True,
+            width="stretch",
+        )
+
+
 PYSCF_PROFILE_WIDGET_FIELDS = [
     "xc",
     "basis",
@@ -2422,6 +2480,8 @@ PYSCF_PROFILE_WIDGET_FIELDS = [
     "eps_enabled",
     "conv_tol",
     "conv_tol_enabled",
+    "scf_level_shift",
+    "scf_level_shift_enabled",
     "disp",
     "disp_enabled",
     "grids_level",
@@ -2492,6 +2552,9 @@ def pyscf_profile_from_state(prefix: str, fallback: dict) -> dict:
         profile["eps"] = float(state_number("eps", 78.3553))
     if st.session_state.get(f"{prefix}_conv_tol_enabled", fallback.get("conv_tol") is not None):
         profile["conv_tol"] = float(state_number("conv_tol", 1e-8))
+    if st.session_state.get(f"{prefix}_scf_level_shift_enabled", fallback.get("scf_level_shift") is not None):
+        level_shift = st.session_state.get(f"{prefix}_scf_level_shift", fallback.get("scf_level_shift"))
+        profile["scf_level_shift"] = float(0.1 if level_shift is None else level_shift)
     if st.session_state.get(f"{prefix}_disp_enabled", fallback.get("disp") is not None):
         profile["disp"] = text_value("disp")
     if st.session_state.get(f"{prefix}_grids_enabled", fallback.get("grids_level") is not None):
@@ -2538,15 +2601,18 @@ def render_session_config(session: dict) -> None:
     st.caption("PySCFの設定はこのセッションのメタデータに保存されます。これらの値から ジョブローカルのJSONが生成されます。")
 
     state_version_key = f"{session['session_id']}_pyscf_config_state_version"
-    if st.session_state.get(state_version_key) != 2:
+    if st.session_state.get(state_version_key) != 3:
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf")
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf_high")
-        st.session_state[state_version_key] = 2
+        st.session_state[state_version_key] = 3
 
     config = json.loads(json.dumps(session.get("pyscf_config", default_pyscf_config())))
     presets = dict(config.get("presets", {}))
     with st.container(border=True):
+        if st.button(":material/help: XC / Basis 候補", key=f"{session['session_id']}_pyscf_candidates_help"):
+            render_pyscf_candidate_dialog()
         if presets:
+            st.divider()
             render_pyscf_copy_controls(session["session_id"], config, presets)
             st.divider()
         pyscf_prefix = f"{session['session_id']}_pyscf"
@@ -2738,9 +2804,10 @@ def render_job_submission(session: dict) -> None:
         st.markdown("**1. Input files (Upload)**")
         with st.container(border=True):
             if mode == "reactant_product":
+                is_scan = st.session_state.get(f"{path_prefix}_init_path_method") == "SCAN"
                 cols = st.columns(2)
                 reactant_file = cols[0].file_uploader("Reactant XYZ (Initial XYZ)", type=["xyz"], key=f"{session_id}_reactant")
-                product_file = cols[1].file_uploader("Product XYZ", type=["xyz"], key=f"{session_id}_product")
+                product_file = cols[1].file_uploader("Product XYZ", type=["xyz"], key=f"{session_id}_product", disabled=is_scan)
             elif mode == "single_input":
                 input_file = st.file_uploader("Input `.traj` または `.xyz`", type=["traj", "xyz"], key=f"{session_id}_input")
             else:
@@ -2961,15 +3028,18 @@ def render_job_submission(session: dict) -> None:
         fixed_atoms = []
     if not any([do_path, do_ts, do_irc, do_vib, do_refine]) and preset != "Figure refresh only":
         errors.append("少なくとも 1 つの workflow step を選択してください。")
+    is_scan = module_settings["init_path_method"] == "SCAN"
     if mode == "reactant_product":
         if not do_path:
             errors.append("reactant / product workflow では Initial Path を有効にしてください。")
         if source_mode == "新たにアップロードする":
-            if reactant_file is None or product_file is None:
-                errors.append("reactant file と product file の両方が必要です。")
+            if reactant_file is None:
+                errors.append("Reactant file (Initial XYZ) は必須です。")
+            elif product_file is None and not is_scan:
+                errors.append("Product file のアップロードが必要です（SCANモード以外）。")
         else:
             reactant_path, product_path = sample_case_files(sample_case or "")
-            if reactant_path is None or product_path is None:
+            if reactant_path is None or (product_path is None and not is_scan):
                 errors.append("選択した sample case が不完全です。")
     elif mode == "single_input":
         if source_mode == "新たにアップロードする" and input_file is None:
@@ -3056,12 +3126,17 @@ def render_job_submission(session: dict) -> None:
     if mode == "reactant_product":
         if source_mode == "新たにアップロードする":
             reactant_path = write_uploaded_file(reactant_file, input_root, reactant_file.name or "reactant.xyz")
-            product_path = write_uploaded_file(product_file, input_root, product_file.name or "product.xyz")
+            if product_file is not None:
+                product_path = write_uploaded_file(product_file, input_root, product_file.name or "product.xyz")
         else:
             sample_reactant, sample_product = sample_case_files(sample_case or "")
             reactant_path = copy_source_file(sample_reactant, input_root, "reactant.xyz")
-            product_path = copy_source_file(sample_product, input_root, "product.xyz")
-        job["inputs"] = [str(reactant_path), str(product_path)]
+            if sample_product is not None:
+                product_path = copy_source_file(sample_product, input_root, "product.xyz")
+        
+        job["inputs"] = [str(reactant_path)]
+        if product_path:
+            job["inputs"].append(str(product_path))
     elif mode == "single_input":
         if source_mode == "新たにアップロードする":
             input_path = write_uploaded_file(input_file, input_root, input_file.name or "input.traj")

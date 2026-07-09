@@ -57,6 +57,8 @@ RUN pip3 install orb-models pytest
 RUN pip3 install streamlit
 RUN pip3 install pandas morfeus-ml ase rmsd cyipopt pydmf
 RUN pip3 install git+https://github.com/hikuram/sella.git@test
+RUN pip3 install skala
+RUN pip3 install chemiscope[streamlit]
 
 # alpb may require tblite>=0.5.0
 RUN pip3 install meson ninja
@@ -68,7 +70,7 @@ RUN meson setup _build --prefix=/usr/local -Dpython=true \
  && meson install -C _build
 RUN pip3 install /opt/tblite/python
 
-RUN git clone -b test-ja --depth 1 https://github.com/hikuram/MolScout.git /opt/MolScout
+RUN git clone -b skala-ja --depth 1 https://github.com/hikuram/MolScout.git /opt/MolScout
 ENV PYTHONPATH="/opt/MolScout/core:${PYTHONPATH}"
 
 # Install fonts and plotting tools

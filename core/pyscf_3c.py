@@ -4,7 +4,7 @@ from typing import Any, Dict, Optional
 
 import numpy as np
 from ase import Atoms, units
-from ase.calculators.calculator import Calculator, all_changes
+from ase.calculators.calculator import Calculator, all_changes, CalculationFailed
 from pyscf import dft, gto, lib
 
 # Partially adapted from AM3GroupHub/redox_benchmark
@@ -19,8 +19,9 @@ def build_method(config: Dict[str, Any]):
     disp = config.get("disp", None)
     verbose = config.get("verbose", 4)
     scf_conv_tol = config.get("scf_conv_tol", 1e-8)
-    direct_scf_tol = config.get("direct_scf_tol", 1e-8)
+    direct_scf_tol = config.get("direct_scf_tol", 1e-14)
     scf_max_cycle = config.get("scf_max_cycle", 50)
+    scf_level_shift = config.get("scf_level_shift", None)
     with_df = config.get("with_df", True)
     auxbasis = config.get("auxbasis", "def2-universal-jkfit")
     with_gpu = config.get("with_gpu", True)
@@ -99,9 +100,12 @@ def build_method(config: Dict[str, Any]):
             raise ValueError(f"Solvation method {solvent['method']} not recognized.")
 
     mf.direct_scf_tol = float(direct_scf_tol)
-    mf.chkfile = None
+    mf.chkfile = config.get("chkfile", None)
+    if scf_level_shift is not None:
+        mf.level_shift = float(scf_level_shift)
     mf.conv_tol = float(scf_conv_tol)
-    mf.max_cycle = scf_max_cycle
+    mf.max_cycle = int(scf_max_cycle)
+    mf._pyscf_3c_config = dict(config)
     return mf
 
 
@@ -119,7 +123,7 @@ def build_3c_method(config: Dict[str, Any]):
     cfg["xc"] = pyscf_xc
     cfg["nlc"] = nlc
     cfg["basis"] = basis
-    cfg["ecp"] = ecp
+    cfg["ecp"] = ecp or config.get("ecp", "def2-svp")
 
     mf = build_method(cfg)
     mf.get_dispersion = MethodType(gen_disp_fun(xc_disp, xc_gcp), mf)
@@ -160,6 +164,88 @@ def get_Hessian_method(mf, xc_3c: Optional[str] = None):
     return hess
 
 
+def _find_scf_object(obj):
+    """Find an underlying PySCF SCF-like object from wrappers/scanners."""
+    seen = set()
+    stack = [obj]
+
+    while stack:
+        cur = stack.pop()
+        if cur is None:
+            continue
+
+        cur_id = id(cur)
+        if cur_id in seen:
+            continue
+        seen.add(cur_id)
+
+        if hasattr(cur, "converged"):
+            return cur
+
+        for name in ("base", "_scf", "_mf", "mf", "with_solvent"):
+            child = getattr(cur, name, None)
+            if child is not None:
+                stack.append(child)
+
+    return None
+
+
+def _make_cpu_initial_dm(target_mf, guess: str = "vsap", xc: Optional[str] = None):
+    """Build an initial density matrix on CPU for a GPU/DF scanner workflow.
+
+    Special guesses such as sap/vsap may not be implemented on GPU scanner
+    wrapper objects.  This function resolves the guess on a plain CPU PySCF KS
+    object and returns only the density matrix for the target method.
+    """
+    mol = target_mf.mol.copy()
+    guess_xc = xc or getattr(target_mf, "xc", "pbe")
+
+    mf0 = dft.KS(mol, xc=guess_xc)
+    mf0.nlc = getattr(target_mf, "nlc", "")
+    mf0.disp = None
+    mf0.verbose = max(0, int(getattr(target_mf, "verbose", 0)) - 1)
+    mf0.max_memory = getattr(target_mf, "max_memory", None)
+
+    return mf0.get_init_guess(mol, key=str(guess))
+
+
+def _initial_dm_with_fallbacks(target_mf, pre_config: Dict[str, Any]):
+    """Create a CPU initial DM, optionally trying fallback guess names."""
+    guesses = [pre_config.get("guess", "vsap")]
+    guesses.extend(pre_config.get("fallback_guesses", []))
+    guess_xc = pre_config.get("guess_xc", None)
+
+    errors = []
+    for guess in guesses:
+        try:
+            return _make_cpu_initial_dm(target_mf, guess=str(guess), xc=guess_xc)
+        except Exception as exc:  # pragma: no cover - depends on PySCF build
+            errors.append(f"{guess}: {exc}")
+
+    joined = "; ".join(errors)
+    raise CalculationFailed(f"Failed to build CPU initial density matrix ({joined})")
+
+
+def _prepare_method_before_scanner(mf, config: Optional[Dict[str, Any]] = None):
+    """Optionally preconverge the target SCF before scanner creation."""
+    config = config or {}
+    pre_config = config.get("pre_scf", {}) or {}
+
+    if not bool(pre_config.get("enabled", False)):
+        return mf
+
+    dm0 = _initial_dm_with_fallbacks(mf, pre_config)
+    mf.kernel(dm0=dm0)
+
+    if not bool(getattr(mf, "converged", False)):
+        raise CalculationFailed(
+            "Initial target SCF failed before scanner creation; "
+            "not creating a gradient scanner from an unconverged SCF."
+        )
+
+    return mf
+
+
 class PySCFCalculator(Calculator):
     """ASE calculator backed by a PySCF mean-field object."""
 
@@ -169,12 +255,21 @@ class PySCFCalculator(Calculator):
     def __init__(self, method, xc_3c: Optional[str] = None, **kwargs):
         self.method = method
         self.xc_3c = xc_3c
-        self.g_scanner = get_gradient_method(self.method, xc_3c=xc_3c).as_scanner()
+        self.g_scanner = None
+        self.config = getattr(method, "_pyscf_3c_config", {})
         super().__init__(**kwargs)
+
+    def _ensure_scanner(self):
+        if self.g_scanner is not None:
+            return
+
+        self.method = _prepare_method_before_scanner(self.method, self.config)
+        self.g_scanner = get_gradient_method(self.method, xc_3c=self.xc_3c).as_scanner()
 
     def set(self, **kwargs):
         changed_parameters = super().set(**kwargs)
         if changed_parameters:
+            self.g_scanner = None
             self.reset()
         return changed_parameters
 
@@ -195,7 +290,26 @@ class PySCFCalculator(Calculator):
             geom = list(zip(atomic_numbers, positions))
 
         mol.set_geom_(geom, unit="Angstrom")
+        self._ensure_scanner()
+
         energy, gradients = self.g_scanner(mol)
+
+        scf_obj = _find_scf_object(self.g_scanner)
+        if scf_obj is None:
+            scf_obj = _find_scf_object(self.method)
+
+        if scf_obj is None:
+            raise CalculationFailed(
+                "Could not locate the underlying PySCF SCF object after scanner call."
+            )
+
+        if not bool(getattr(scf_obj, "converged", False)):
+            raise CalculationFailed(
+                "PySCF SCF failed to converge; discarding unconverged-SCF gradient."
+            )
+
+        if not np.isfinite(energy) or not np.all(np.isfinite(gradients)):
+            raise CalculationFailed("PySCF returned non-finite energy or gradients.")
 
         self.results["energy"] = energy * units.Hartree
         self.results["forces"] = -gradients * (units.Hartree / units.Bohr)
