@@ -9,8 +9,8 @@ from app_core.paths import AUTO_REFRESH_SECONDS, SESSION_RETENTION_DAYS
 
 st.markdown("# :material/science: MolScout Remote Queue")
 st.caption(
-    "長時間を要するワークフローを共有実行するための laboratory queue です。"
-    "ユーザーセッションとサーバーモニタリング機能を備えています。"
+    "Laboratory queue for shared execution of long-running workflows."
+    "Includes user sessions and server monitoring."
 )
 st.markdown(
     '<span class="app-badge">1 worker</span>'
@@ -24,17 +24,17 @@ st.divider()
 st.markdown("### Page guide")
 st.markdown(
     """
-- **Queue**: 共有キューと選択中セッションの概要を確認します。
-- **Submit**: 反応経路探索とファイル連結処理の job を投入します。
-- **Results**: セッション内 job、ログ、結果ファイル、ZIP download を確認します。
-- **PySCF**: 選択中セッションの PySCF 設定を編集します。
+- **Queue**: View the shared queue and selected session overview.
+- **Submit**: Submit reaction-path and file-concatenation jobs.
+- **Results**: Inspect session jobs, logs, output files, and ZIP downloads.
+- **PySCF**: Edit PySCF settings for the selected session.
 """
 )
 
 st.markdown("### Sidebar")
 st.markdown(
     """
-セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log、cleanup は全 page 共通の sidebar にあります。
-Cleanup は確認 dialog から実行します。
+Session creation and selection, monitoring, environment checks, sample listings, worker logs, and cleanup are available from the shared sidebar on every page.
+Cleanup runs from a confirmation dialog.
 """
 )
