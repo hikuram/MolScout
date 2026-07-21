@@ -1106,7 +1106,11 @@ def make_optpoints_traj(peak_files: List[str], out_traj: str = "optpoints/optpoi
 def finalize_run():
     log("System", "Finalizing run and updating CSV files ...")
     csv_targets = []
-    if g.PICK_OPTPOINTS_ON and hasattr(g, 'ORIG_R_CSV'):
+    if getattr(g, 'INIT_PATH_METHOD', '') == 'CAT':
+        # CAT processes every concatenated frame and does not run peak extraction,
+        # so g.PEAK_IDX is intentionally undefined in this workflow.
+        csv_targets.append((g.R_CSV, None))
+    elif g.PICK_OPTPOINTS_ON and hasattr(g, 'ORIG_R_CSV'):
         csv_targets.append((g.ORIG_R_CSV, g.PEAK_IDX))
         csv_targets.append((g.R_CSV, None))
     else:
