@@ -6,7 +6,6 @@ Utility functions for setting up ASE calculators (PySCF, OrbMol, etc.).
 import os
 import sys
 import json
-import cupy
 from orb_models.forcefield import pretrained
 from orb_models.forcefield.inference.calculator import ORBCalculator
 
@@ -16,6 +15,32 @@ import default_config as g
 # Cache for PySCF configurations to avoid reading the JSON file multiple times
 _PYSCF_CONFIG_CACHE = None
 _PYSCF_PROFILE_CACHE = {}
+
+
+def clear_gpu_cache():
+    """Release unused PyTorch and CuPy cache blocks before a GPU calculation."""
+    if g.DEVICE != "cuda":
+        return
+
+    import gc
+
+    gc.collect()
+
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except ImportError:
+        pass
+
+    try:
+        import cupy
+
+        cupy.get_default_memory_pool().free_all_blocks()
+        cupy.get_default_pinned_memory_pool().free_all_blocks()
+    except ImportError:
+        pass
 
 def load_pyscf_config():
     """Load PySCF configuration from a JSON file."""
@@ -46,6 +71,27 @@ def get_pyscf_profile(calc_type):
     _PYSCF_PROFILE_CACHE[calc_type] = profile
     return profile
 
+
+def get_solvation_info(calc_type):
+    """Return normalized implicit-solvation metadata for a calculator type."""
+    if calc_type == "orbmol+alpb":
+        return {
+            "enabled": True,
+            "model": "ALPB",
+            "solvent": str(getattr(g, "ALPB_SOLVENT", "water")),
+        }
+
+    if calc_type in ("pyscf", "pyscf_high"):
+        profile = get_pyscf_profile(calc_type)
+        enabled = bool(profile.get("with_solvent", False))
+        return {
+            "enabled": enabled,
+            "model": str(profile.get("solvent_model", "SMD")).upper() if enabled else None,
+            "solvent": str(profile.get("solvent", "water")) if enabled else None,
+        }
+
+    return {"enabled": False, "model": None, "solvent": None}
+
 def build_pyscf_method_common(atoms, base_name, profile):
     """Build the common PySCF mean-field object (RKS) with standard settings."""
     from pyscf import M, lib
@@ -65,11 +111,7 @@ def build_pyscf_method_common(atoms, base_name, profile):
 
     is_skala = profile.get("is_skala", False)
 
-    if g.DEVICE == "cuda":
-        import torch
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        cupy.get_default_memory_pool().free_all_blocks()
+    clear_gpu_cache()
 
     if is_skala:
         if g.DEVICE == "cuda":
@@ -119,6 +161,8 @@ def build_pyscf_standard(atoms, base_name, profile):
 def build_pyscf_3c(atoms, base_name, profile):
     """Build a PySCF calculator specifically for composite methods like r2SCAN-3c."""
     from pyscf_3c import PySCFCalculator, build_3c_method
+
+    clear_gpu_cache()
 
     config = {}
     config["xc"] = profile["xc"]
