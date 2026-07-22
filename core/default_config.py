@@ -37,6 +37,9 @@ ALPB_SOLVENT: str = "water"
 MULT: int = 1
 THERMO_TEMPERATURE: float = 298.15
 THERMO_ATOMOSPHERE: float = 101325.0
+# Optional diagnostic columns written during vibrational analysis.
+# Supported values: "energy_LL_vib [kcal/mol]", "thermal_corr_G [kcal/mol]"
+THERMO_EXTRA_CSV_COLUMNS: list = []
 
 # Module-specific settings
 # -DMF
