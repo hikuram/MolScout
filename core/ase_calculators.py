@@ -65,6 +65,12 @@ def build_pyscf_method_common(atoms, base_name, profile):
 
     is_skala = profile.get("is_skala", False)
 
+    if g.DEVICE == "cuda":
+        import torch
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        cupy.get_default_memory_pool().free_all_blocks()
+
     if is_skala:
         if g.DEVICE == "cuda":
             from skala.gpu4pyscf import SkalaKS
@@ -99,7 +105,6 @@ def build_pyscf_method_common(atoms, base_name, profile):
         mf.nlcgrids.level = profile.get("nlcgrids_level")
 
     if g.DEVICE == "cuda":
-        cupy.get_default_memory_pool().free_all_blocks()
         if not is_skala:
             mf = mf.to_gpu()
             
