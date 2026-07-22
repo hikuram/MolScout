@@ -31,10 +31,101 @@ from sella_ext_AdaptiveIRC import AdaptiveIRC
 from pyscf_exporter import export_pyscf_single_point
 
 # --- Separated Modules ---
-from ase_calculators import make_calculator
+from ase_calculators import make_calculator, get_pyscf_profile, get_solvation_info
 from traj_utils import extract_peaks_from_traj, traj_to_xyz, write_energies, \
     split_traj_to_xyz, generate_path_concat
 from utils import log, read
+
+
+def build_thermo_csv_output(time_vib, vib_values, energy_ll_kcal, thermal_corr_g_kcal):
+    """Build the configured CSV output for one vibrational analysis."""
+    columns = [
+        'time_vib [s]', 'ZPE [kcal/mol]', 'E_0K [kcal/mol]', 'H [kcal/mol]',
+        'G [kcal/mol]', 'G_std [kcal/mol]', 'G_floor [kcal/mol]'
+    ]
+    values = [time_vib] + vib_values
+
+    optional_values = {
+        'energy_LL_vib [kcal/mol]': energy_ll_kcal,
+        'thermal_corr_G [kcal/mol]': thermal_corr_g_kcal,
+    }
+    for column in getattr(g, 'THERMO_EXTRA_CSV_COLUMNS', []):
+        if column not in optional_values:
+            log("Warn", f"Ignoring unsupported thermochemistry CSV column: {column}")
+            continue
+        columns.append(column)
+        values.append(optional_values[column])
+
+    return columns, values
+
+
+def log_thermochemistry_context():
+    """Log the standard-state and implicit-solvation assumptions used for thermochemistry."""
+    pressure_atm = g.THERMO_ATOMOSPHERE / 101325.0
+    log(
+        "Thermo",
+        f"Thermochemistry model: ideal-gas RRHO/qRRHO at "
+        f"{g.THERMO_TEMPERATURE:.2f} K and {pressure_atm:.6g} atm."
+    )
+
+    vib_solvation = get_solvation_info(g.CALC_TYPE)
+    if vib_solvation["enabled"]:
+        log(
+            "Thermo",
+            f"Implicit solvation for vibrations: {vib_solvation['model']} "
+            f"({vib_solvation['solvent']})."
+        )
+        log(
+            "Thermo",
+            "Translational, rotational, and standard-state terms remain ideal-gas at 1 atm; "
+            "no 1 M correction is applied."
+        )
+    else:
+        log("Thermo", "Implicit solvation for vibrations: disabled.")
+
+    if not (getattr(g, 'VIB_ON', False) and getattr(g, 'REFINE_ENERGY_ON', False)):
+        return
+
+    refine_solvation = get_solvation_info(g.REFINE_CALC_TYPE)
+    if refine_solvation["enabled"]:
+        log(
+            "Refine",
+            f"Implicit solvation for refined electronic energies: "
+            f"{refine_solvation['model']} ({refine_solvation['solvent']})."
+        )
+    else:
+        log("Refine", "Implicit solvation for refined electronic energies: disabled.")
+
+    if vib_solvation["enabled"] != refine_solvation["enabled"]:
+        log(
+            "Warn",
+            "Solvation mismatch: vibrational and refined electronic energies do not use "
+            "the same implicit-solvation state."
+        )
+    elif vib_solvation["enabled"]:
+        vib_solvent = str(vib_solvation["solvent"]).strip().lower()
+        refine_solvent = str(refine_solvation["solvent"]).strip().lower()
+        if vib_solvent != refine_solvent:
+            log(
+                "Warn",
+                f"Solvent mismatch: vibrations use {vib_solvation['model']}/"
+                f"{vib_solvation['solvent']}, while refinement uses "
+                f"{refine_solvation['model']}/{refine_solvation['solvent']}."
+            )
+        elif vib_solvation["model"] != refine_solvation["model"]:
+            log(
+                "Refine",
+                f"G_refine combines {refine_solvation['model']} electronic energies with "
+                f"{vib_solvation['model']} thermal corrections for the same solvent."
+            )
+
+    if g.REFINE_CALC_TYPE in ("pyscf", "pyscf_high"):
+        refine_profile = get_pyscf_profile(g.REFINE_CALC_TYPE)
+        if refine_profile.get("is_3c", False):
+            log(
+                "Refine",
+                "Energy-only 3c refinement is enabled; nuclear gradients are skipped."
+            )
 
 # Overwrite global variables
 #g.INIT_PATH_SEARCH_ON = False
@@ -219,6 +310,14 @@ def process_local_maxima():
             df_new = pd.read_csv(optpoints_csv)
             g.R_CSV = optpoints_csv
 
+    if g.VIB_ON or g.REFINE_ENERGY_ON:
+        if g.PICK_OPTPOINTS_ON:
+            log("Thermo", "Vibration/refinement targets: selected optimized structures.")
+        else:
+            log("Thermo", "Vibration/refinement targets: initial-path peak structures (pre-TSOPT).")
+    if g.VIB_ON:
+        log_thermochemistry_context()
+
     # Sub-iteration 2: include endpoints or reduced representative points
     t_vib_sum = 0
     t_refine_sum = 0
@@ -228,6 +327,8 @@ def process_local_maxima():
         atoms = read(peak_file)
         atoms.info["charge"] = g.CHARGE
         atoms.info["spin"] = g.MULT
+        energy_ll_vib_kcal = None
+        thermal_corr_G = None
 
         # == Vibrations and IdealGasThermo ===================
         if g.VIB_ON:
@@ -235,18 +336,19 @@ def process_local_maxima():
             log("Vib", f"Running vibrations for {base_name} ...")
             try:
                 is_ts_point = (i != 0 and i != len(vib_files) - 1)
-                vib_result = vib_img(base_name + ".xyz", is_ts=is_ts_point)
+                vib_result, energy_ll_vib_kcal, thermal_corr_G = vib_img(
+                    base_name + ".xyz", is_ts=is_ts_point
+                )
             except Exception as e:
                 log("Warn", f"Vibrations failed for {base_name}: {e}")
                 vib_result = [None] * 6
             t_vib = timepfc() - t_vib_start
             t_vib_sum += t_vib
             
-            write_result(
-                ['time_vib [s]', 'ZPE [kcal/mol]', 'E_0K [kcal/mol]', 'H [kcal/mol]', 
-                 'G [kcal/mol]', 'G_std [kcal/mol]', 'G_floor [kcal/mol]'],
-                [t_vib] + vib_result
+            thermo_columns, thermo_values = build_thermo_csv_output(
+                t_vib, vib_result, energy_ll_vib_kcal, thermal_corr_G
             )
+            write_result(thermo_columns, thermo_values)
             log("Vib", f"-> Vibrations finished in {t_vib:.2f} s")
 
         # == Refinement ===================
@@ -268,17 +370,8 @@ def process_local_maxima():
                 [t_refine, energy_ref_eV, energy_ref_kcal]
             )
 
-            if (
-                'G [kcal/mol]' in df_new.columns
-                and 'energy [kcal/mol]' in df_new.columns
-                and pd.notna(df_new.at[df_new.index[idx], 'G [kcal/mol]'])
-                and pd.notna(df_new.at[df_new.index[idx], 'energy [kcal/mol]'])
-                and energy_ref_kcal is not None
-            ):
-                thermal_corr_G = (
-                    df_new.at[df_new.index[idx], 'G [kcal/mol]']
-                    - df_new.at[df_new.index[idx], 'energy [kcal/mol]']
-                )
+            # Reuse the correction from this exact vibrational calculation.
+            if thermal_corr_G is not None and energy_ref_kcal is not None:
                 G_refine_kcal = energy_ref_kcal + thermal_corr_G
                 write_result('G_refine [kcal/mol] (HL//LL)', G_refine_kcal)
 
@@ -663,18 +756,20 @@ def refine_energy_img(xyz_name, refine_type="pyscf_high"):
     img.info["charge"] = g.CHARGE
     img.info["spin"] = g.MULT
 
-    img.calc = make_calculator(refine_type, img, img_name + "_refine")
-    energy_eV = img.get_potential_energy()
-    energy_kcal = energy_eV * g.EV_TO_KCAL_MOL
-    
     try:
-        export_pyscf_single_point(img, prefix=img_name+"_refine")
-        log("I/O", f"Exported PySCF input to {img_name}_refine")
-    except Exception as e:
-        log("Warn", f"export_pyscf_single_point failed: {e}")
-    
-    img.calc = None
-    return [energy_eV, energy_kcal]
+        img.calc = make_calculator(refine_type, img, img_name + "_refine")
+        energy_eV = img.get_potential_energy()
+        energy_kcal = energy_eV * g.EV_TO_KCAL_MOL
+
+        try:
+            export_pyscf_single_point(img, prefix=img_name+"_refine")
+            log("I/O", f"Exported PySCF input to {img_name}_refine")
+        except Exception as e:
+            log("Warn", f"export_pyscf_single_point failed: {e}")
+
+        return [energy_eV, energy_kcal]
+    finally:
+        img.calc = None
 
 # 
 def get_symmetry_info(atoms, tol=1e-3):
@@ -1021,10 +1116,19 @@ def vib_img(xyz_name, is_ts=None):
         
         # The main Gibbs free energy G uses the qRRHO method
         G_kcal = G_kcal_qRRHO
+        energy_ll_kcal = g.EV_TO_KCAL_MOL * electronic_energy
+        thermal_corr_G_kcal = G_kcal - energy_ll_kcal
 
-        return [zpe_kcal, E_0K_kcal, H_kcal, G_kcal, G_kcal_std, G_kcal_floor]
+        return (
+            [zpe_kcal, E_0K_kcal, H_kcal, G_kcal, G_kcal_std, G_kcal_floor],
+            energy_ll_kcal,
+            thermal_corr_G_kcal,
+        )
     finally:
-        vib.clean()
+        try:
+            vib.clean()
+        finally:
+            img.calc = None
 
 def make_optpoints_traj(peak_files: List[str], out_traj: str = "optpoints/optpoints.traj") -> List[str]:
     """
@@ -1084,6 +1188,7 @@ def make_optpoints_traj(peak_files: List[str], out_traj: str = "optpoints/optpoi
             atoms.info["charge"] = g.CHARGE
             atoms.info["spin"] = g.MULT
         
+        atoms.calc = None
         branch_images.append(atoms)
 
     write(out_traj, branch_images)
@@ -1199,9 +1304,16 @@ def process_batch_frames():
     t_vib_sum = 0
     t_refine_sum = 0
 
+    if getattr(g, 'VIB_ON', False) or getattr(g, 'REFINE_ENERGY_ON', False):
+        log("Thermo", "Vibration/refinement targets: CAT frame structures after optional optimization.")
+    if getattr(g, 'VIB_ON', False):
+        log_thermochemistry_context()
+
     for idx, frame_file in enumerate(frame_files):
         base_name = os.path.splitext(frame_file)[0]
         target_xyz = frame_file
+        energy_ll_vib_kcal = None
+        thermal_corr_G = None
         
         # == 1. Structure Optimization (Standard Opt, NOT TS Opt) ==
         if getattr(g, 'REFINE_INPUT_ON', False):
@@ -1231,6 +1343,8 @@ def process_batch_frames():
                         [t_opt] + opt_energy,
                         idx
                     )
+                optimized_img.calc = None
+                optimized_img = None
 
         # == 2. Vibrational Analysis ==
         if getattr(g, 'VIB_ON', False):
@@ -1240,19 +1354,17 @@ def process_batch_frames():
                 t_vib_start = timepfc()
                 log("Vib", f"Running vibrations for {base_name} ...")
                 try:
-                    vib_result = vib_img(target_xyz)
+                    vib_result, energy_ll_vib_kcal, thermal_corr_G = vib_img(target_xyz)
                 except Exception as e:
                     log("Warn", f"Vibrations failed for {base_name}: {e}")
                     vib_result = [None] * 6
                 
                 t_vib = timepfc() - t_vib_start
                 t_vib_sum += t_vib
-                write_result(
-                    ['time_vib [s]', 'ZPE [kcal/mol]', 'E_0K [kcal/mol]', 'H [kcal/mol]', 
-                     'G [kcal/mol]', 'G_std [kcal/mol]', 'G_floor [kcal/mol]'],
-                    [t_vib] + vib_result,
-                    idx
+                thermo_columns, thermo_values = build_thermo_csv_output(
+                    t_vib, vib_result, energy_ll_vib_kcal, thermal_corr_G
                 )
+                write_result(thermo_columns, thermo_values, idx)
 
         # == 3. High-Level Energy Refinement ==
         if getattr(g, 'REFINE_ENERGY_ON', False):
@@ -1276,14 +1388,8 @@ def process_batch_frames():
                     idx
                 )
                 
-                # Apply thermal corrections to refined Gibbs energy
-                if (
-                    'G [kcal/mol]' in df_new.columns and 'energy [kcal/mol]' in df_new.columns
-                    and pd.notna(df_new.at[df_new.index[idx], 'G [kcal/mol]'])
-                    and pd.notna(df_new.at[df_new.index[idx], 'energy [kcal/mol]'])
-                    and energy_ref_kcal is not None
-                ):
-                    thermal_corr_G = df_new.at[df_new.index[idx], 'G [kcal/mol]'] - df_new.at[df_new.index[idx], 'energy [kcal/mol]']
+                # Reuse the correction from this exact vibrational calculation.
+                if thermal_corr_G is not None and energy_ref_kcal is not None:
                     G_refine_kcal = energy_ref_kcal + thermal_corr_G
                     write_result('G_refine [kcal/mol] (HL//LL)', G_refine_kcal, idx)
 
