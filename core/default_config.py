@@ -78,3 +78,11 @@ FIXED_ATOMS: list = []     # Fixed atoms constraints (list of integer indices, e
 # Physical constants
 EV_TO_KCAL_MOL: float = 23.0605
 EV_TO_HARTREE: float = 1 / 27.2114  # approx. 0.0367493
+
+def as_dict() -> dict[str, object]:
+    """Return all public uppercase configuration values."""
+    return {
+        key: value
+        for key, value in globals().items()
+        if key.isupper() and not key.startswith("_")
+    }
