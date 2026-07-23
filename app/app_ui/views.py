@@ -2928,10 +2928,17 @@ def render_job_submission(session: dict) -> None:
         extra_cols = st.columns(3)
         if refine_input_key not in st.session_state:
             st.session_state[refine_input_key] = mode == "reactant_product" and init_path_method != "SCAN"
+        refine_input_applicable = (
+            mode == "reactant_product"
+            and bool(do_path)
+            and str(module_settings["init_path_method"]).upper() in {"DMF", "NEB"}
+        )
+        if not refine_input_applicable:
+            st.session_state[refine_input_key] = False
         refine_input_on = extra_cols[0].checkbox(
             "初期構造の最適化",
             key=refine_input_key,
-            disabled=mode != "reactant_product",
+            disabled=not refine_input_applicable,
         )
         pick_optpoints_key = f"{session_id}_pick_optpoints"
         save_fig_key = f"{session_id}_savefig"
