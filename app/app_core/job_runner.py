@@ -261,10 +261,12 @@ def build_command(
     if tblite_method:
         command.extend(["--tblite-method", tblite_method])
     if config_overrides:
-        orbmol_version = str(config_overrides.get("ORBMOL_VERSION", "")).lower()
-        if orbmol_version in {"v1", "v2"}:
-            command.extend(["--orbmol-version", orbmol_version])
-        command.extend(["--config-json", json.dumps(config_overrides, separators=(",", ":"))])
+        config_path = output_dir.parent / "submitted_config.json"
+        config_path.write_text(
+            json.dumps(config_overrides, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        command.extend(["--config", str(config_path)])
     if cat_paths:
         command.extend(["--catfiles", *[str(path) for path in cat_paths]])
     elif input_path is not None:
