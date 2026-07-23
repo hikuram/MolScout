@@ -88,6 +88,8 @@ def organize_run_output_files(output_dir: Path) -> int:
         if not path.is_file():
             continue
         relative = path.relative_to(output_dir)
+        if relative == Path("resolved_config.json"):
+            continue
         if relative.parts and relative.parts[0] in category_roots:
             continue
         category = OUTPUT_CATEGORY_DIRS.get(path.suffix.lower())
@@ -229,6 +231,7 @@ def build_command(
     temperature: float | None = None,
     tblite_method: str | None = None,
     config_overrides: dict | None = None,
+    config_path: Path | None = None,
 ) -> list[str]:
     command = [
         sys.executable,
@@ -260,12 +263,16 @@ def build_command(
         command.extend(["--temperature", str(temperature)])
     if tblite_method:
         command.extend(["--tblite-method", tblite_method])
+    if config_overrides and config_path is not None:
+        raise ValueError("Use either config_overrides or config_path, not both.")
     if config_overrides:
-        config_path = output_dir.parent / "submitted_config.json"
-        config_path.write_text(
+        generated_config_path = output_dir.parent / "submitted_config.json"
+        generated_config_path.write_text(
             json.dumps(config_overrides, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+        command.extend(["--config", str(generated_config_path)])
+    elif config_path is not None:
         command.extend(["--config", str(config_path)])
     if cat_paths:
         command.extend(["--catfiles", *[str(path) for path in cat_paths]])
