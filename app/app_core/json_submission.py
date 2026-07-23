@@ -160,6 +160,19 @@ def input_mode(config: dict[str, Any]) -> str:
     return "single_input"
 
 
+def normalize_runtime_config(config: dict[str, Any]) -> dict[str, Any]:
+    """Return a runtime copy with workflow-inapplicable options disabled."""
+    normalized = dict(config)
+    method = str(normalized.get("INIT_PATH_METHOD", "DMF")).upper()
+    refine_input_applicable = (
+        bool(normalized.get("INIT_PATH_SEARCH_ON", True))
+        and method in {"DMF", "NEB", "CAT"}
+    )
+    if not refine_input_applicable:
+        normalized["REFINE_INPUT_ON"] = False
+    return normalized
+
+
 def product_is_required(config: dict[str, Any]) -> bool:
     """Return whether the path search requires a product structure."""
     return str(config.get("INIT_PATH_METHOD", "DMF")).upper() != "SCAN"
