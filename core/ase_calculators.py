@@ -15,6 +15,32 @@ import default_config as g
 # Cache for PySCF configurations to avoid reading the JSON file multiple times
 _PYSCF_CONFIG_CACHE = None
 _PYSCF_PROFILE_CACHE = {}
+_TORCH_GPU_MEMORY_LIMIT_APPLIED = False
+
+
+def configure_torch_gpu_memory_limit():
+    """Limit the PyTorch CUDA allocator to 50% of device memory."""
+    global _TORCH_GPU_MEMORY_LIMIT_APPLIED
+
+    if _TORCH_GPU_MEMORY_LIMIT_APPLIED or g.DEVICE != "cuda":
+        return
+
+    import torch
+
+    if not torch.cuda.is_available():
+        return
+
+    fraction = 0.50
+    device = torch.cuda.current_device()
+    torch.cuda.set_per_process_memory_fraction(fraction, device=device)
+
+    total_gib = torch.cuda.get_device_properties(device).total_memory / (1024 ** 3)
+    print(
+        f"[Memory] PyTorch CUDA allocator limit: {fraction:.0%} "
+        f"({total_gib * fraction:.2f} GiB of {total_gib:.2f} GiB)"
+    )
+
+    _TORCH_GPU_MEMORY_LIMIT_APPLIED = True
 
 
 def clear_gpu_cache():
@@ -115,6 +141,7 @@ def build_pyscf_method_common(atoms, base_name, profile):
 
     if is_skala:
         if g.DEVICE == "cuda":
+            configure_torch_gpu_memory_limit()
             from skala.gpu4pyscf import SkalaKS
         else:
             from skala.pyscf import SkalaKS
