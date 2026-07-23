@@ -768,6 +768,18 @@ def all_result_files(run_dir: Path) -> list[Path]:
     return sorted(unique.values(), key=lambda item: str(item.relative_to(run_dir)))
 
 
+def all_job_json_files(job: dict) -> tuple[Path, list[Path]]:
+    """Return JSON files from the complete job directory."""
+    root = job_dir(str(job["session_id"]), str(job["job_id"]))
+    if not root.exists():
+        return root, []
+    files = sorted(
+        [path for path in root.rglob("*.json") if path.is_file()],
+        key=lambda item: str(item.relative_to(root)),
+    )
+    return root, files
+
+
 def category_for_result_candidate(name: str) -> str:
     suffix = Path(name).suffix.lower()
     if suffix in LOG_EXTENSIONS:
@@ -3700,7 +3712,8 @@ def render_session_jobs(session: dict) -> None:
 def render_job_results(job: dict) -> None:
     run_dir = Path(job["output_dir"])
     files = all_result_files(run_dir)
-    if not files:
+    job_root, job_json_files = all_job_json_files(job)
+    if not files and not job_json_files:
         st.info("出力はまだありません。")
         return
 
@@ -3721,8 +3734,11 @@ def render_job_results(job: dict) -> None:
 
     if result_view == "概要":
         rows = [{"path": str(path.relative_to(run_dir)), "size": file_size_label(path)} for path in files]
-        st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
-        render_molscout_log_expander(files, run_dir)
+        if rows:
+            st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
+            render_molscout_log_expander(files, run_dir)
+        else:
+            st.info("Calculation outputs are not available yet. Job JSON files can be viewed in the Json tab.")
     elif result_view == "Logs":
         log_files = [path for path in files if path.suffix.lower() in LOG_EXTENSIONS]
         if log_files:
@@ -3732,13 +3748,14 @@ def render_job_results(job: dict) -> None:
         else:
             st.info(".log file はありません。")
     elif result_view == "Json":
-        json_files = [path for path in files if path.suffix.lower() in JSON_EXTENSIONS]
-        if json_files:
-            labels = [str(path.relative_to(run_dir)) for path in json_files]
-            selected = json_files[labels.index(st.selectbox("JSON file", labels, key=f"json_{job['job_id']}"))]
+        if job_json_files:
+            labels = [str(path.relative_to(job_root)) for path in job_json_files]
+            selected = job_json_files[
+                labels.index(st.selectbox("JSON file", labels, key=f"json_{job['job_id']}"))
+            ]
             st.code(tail_text(selected, max_lines=280) or "(empty file)", language="json")
         else:
-            st.info("JSON file はありません。")
+            st.info("No JSON files are available for this job.")
     elif result_view == "XYZ":
         xyz_files = [path for path in files if path.suffix.lower() in XYZ_EXTENSIONS]
         if xyz_files:
