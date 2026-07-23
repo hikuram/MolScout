@@ -35,6 +35,7 @@ from ase_calculators import make_calculator, get_pyscf_profile, get_solvation_in
 from traj_utils import extract_peaks_from_traj, traj_to_xyz, write_energies, \
     split_traj_to_xyz, generate_path_concat
 from utils import log, read
+from config_manager import apply_config, apply_config_file, config_to_dict, save_config
 
 
 def build_thermo_csv_output(time_vib, vib_values, energy_ll_kcal, thermal_corr_g_kcal):
@@ -1439,24 +1440,21 @@ def write_cat_initial_energies(traj_name, csv_name):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Run full IRC jobs starting with reactant.xyz and product.xyz')
     parser.add_argument("-d", "--directory", type=str, required=True, help="path to the destination folder")
+    parser.add_argument("--config", type=str, default=None, help="JSON configuration file applied before CLI overrides")
     parser.add_argument("-c", "--charge", type=int, required=True, help="system total charge")
-    parser.add_argument("-m", "--method", type=str, required=False, default="orbmol", help="calculation method of the PES")
+    parser.add_argument("-m", "--method", type=str, default=None, help="calculation method of the PES")
     parser.add_argument("--orbmol-version", type=str, choices=["v1", "v2"], default=None, help="OrbMol model version")
     parser.add_argument("--alpb-solvent", type=str, default=None, help="ALPB solvent name")
     parser.add_argument("--tblite-accuracy", type=float, default=None, help="TBLite accuracy")
-    if getattr(g, 'INIT_PATH_SEARCH_ON', True):
-        # Changed required=True to required=False to support CAT mode without reactant
-        parser.add_argument("-r", "--reactant", type=str, required=False, help="inputfile for the reactant .xyz file")
-        parser.add_argument("-p", "--product", type=str, required=False, help="inputfile for the product .xyz file")
-        # Argument for CAT mode
-        parser.add_argument("-cat", "--catfiles", type=str, nargs='+', required=False, help="list of files to concatenate (.xyz/.traj)")
-    else:
-        parser.add_argument("-i", "--input", type=str, required=True, default="input.traj", help="input .traj or .xyz file")
-    parser.add_argument("-rs", "--result", type=str, required=False, default="result.csv", help="resulting dataframe .csv file")
+    parser.add_argument("-r", "--reactant", type=str, default=None, help="inputfile for the reactant .xyz file")
+    parser.add_argument("-p", "--product", type=str, default=None, help="inputfile for the product .xyz file")
+    parser.add_argument("-cat", "--catfiles", type=str, nargs='+', default=None, help="list of files to concatenate (.xyz/.traj)")
+    parser.add_argument("-i", "--input", type=str, default=None, help="input .traj or .xyz file")
+    parser.add_argument("-rs", "--result", type=str, default=None, help="resulting dataframe .csv file")
     args = parser.parse_args()
+    apply_config_file(g, args.config)
     
     log("System", f"Starting MolScout at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    log("System", f"Charge: {args.charge}, Method: {args.method}")
 
     t_total_start = timepfc()
     if getattr(g, 'INIT_PATH_SEARCH_ON', True):
@@ -1491,7 +1489,7 @@ if __name__ == '__main__':
             else:
                 log("I/O", f"Copied reactant to {args.directory}")
     else:
-        if not os.path.exists(args.input):
+        if not args.input or not os.path.exists(args.input):
             log("Fail", f"Canceled: cannot load {args.input}")
             sys.exit()
         if not os.path.exists(args.directory):
@@ -1503,16 +1501,24 @@ if __name__ == '__main__':
         g.I_TRAJ = input_name
         
     os.chdir(args.directory)
-    g.CURRENT_DIR = args.directory
-    g.CHARGE = args.charge
-    g.CALC_TYPE = args.method
+    cli_overrides = {
+        "CURRENT_DIR": args.directory,
+        "CHARGE": args.charge,
+    }
+    if args.method is not None:
+        cli_overrides["CALC_TYPE"] = args.method
+    if args.result is not None:
+        cli_overrides["R_CSV"] = args.result
     if args.orbmol_version is not None:
-        g.ORBMOL_VERSION = args.orbmol_version
+        cli_overrides["ORBMOL_VERSION"] = args.orbmol_version
     if args.alpb_solvent is not None:
-        g.ALPB_SOLVENT = args.alpb_solvent
+        cli_overrides["ALPB_SOLVENT"] = args.alpb_solvent
     if args.tblite_accuracy is not None:
-        g.TBLITE_ACCURACY = args.tblite_accuracy
-    g.R_CSV = args.result
+        cli_overrides["TBLITE_ACCURACY"] = args.tblite_accuracy
+    apply_config(g, cli_overrides)
+    if not hasattr(g, "R_CSV"):
+        apply_config(g, {"R_CSV": "result.csv"})
+    log("System", f"Charge: {g.CHARGE}, Method: {g.CALC_TYPE}")
     if os.path.exists(g.R_CSV):
         log("Info", f"{g.R_CSV} will be overwritten")
     else:
@@ -1521,7 +1527,8 @@ if __name__ == '__main__':
         if not getattr(g, 'OPT_OPTPOINTS_AGAIN_ON', False):
             log("Info", "Hybrid + ALPB mode detected: Forcing OPT_OPTPOINTS_AGAIN_ON=True to re-optimize geometries on the GFN2-xTB PES.")
             g.OPT_OPTPOINTS_AGAIN_ON = True
-        
+
+    save_config(config_to_dict(g), "resolved_config.json")
     log("System", "--- Global Configuration Dump ---")
     for key in dir(g):
         if key.isupper() and not key.startswith("_"):
