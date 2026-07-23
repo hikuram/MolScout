@@ -1528,6 +1528,14 @@ if __name__ == '__main__':
             log("Info", "Hybrid + ALPB mode detected: Forcing OPT_OPTPOINTS_AGAIN_ON=True to re-optimize geometries on the GFN2-xTB PES.")
             g.OPT_OPTPOINTS_AGAIN_ON = True
 
+    initial_path_method = str(getattr(g, 'INIT_PATH_METHOD', 'DMF')).upper()
+    refine_input_applicable = (
+        bool(getattr(g, 'INIT_PATH_SEARCH_ON', True))
+        and initial_path_method in {"DMF", "NEB", "CAT"}
+    )
+    if not refine_input_applicable:
+        g.REFINE_INPUT_ON = False
+
     save_config(config_to_dict(g), "resolved_config.json")
     log("System", "--- Global Configuration Dump ---")
     for key in dir(g):
