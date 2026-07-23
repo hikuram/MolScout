@@ -24,6 +24,13 @@ CALC_TYPE: str = "orbmol" # "orbmol", "orbmol+alpb", "pyscf", "pyscf_high"
 REFINE_CALC_TYPE: str = "pyscf_high"
 DEVICE: str = "cuda" # "cuda" or "cpu"
 
+# Fraction of total CUDA memory available to PyTorch after the CUDA Skala
+# backend is selected. The limit is applied once, immediately before
+# skala.gpu4pyscf.SkalaKS is imported and constructed.
+# It does not currently limit OrbMol, gpu4pyscf, or CuPy allocations.
+# Set to None to disable. Valid range: 0 < value <= 1.
+PYTORCH_GPU_MEMORY_FRACTION: float | None = 0.50
+
 # OrbMol settings
 ORBMOL_VERSION: str = "v2" # "v1", "v2"
 
