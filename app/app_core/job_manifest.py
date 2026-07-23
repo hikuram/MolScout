@@ -43,12 +43,23 @@ def write_job_manifest(
     config_original_name: str | None,
     config_stored_path: str | Path | None,
     inputs: Iterable[Mapping[str, object]],
+    runtime_config_path: str | Path | None = None,
+    source_job: Mapping[str, object] | None = None,
+    pyscf_config: Mapping[str, object] | None = None,
 ) -> Path:
     """Write job_manifest.json and return its path."""
     session_id = str(job["session_id"])
     job_id = str(job["job_id"])
     job_root = job_dir(session_id, job_id)
     manifest_path = job_root / "job_manifest.json"
+    config_payload = {
+        "original_name": config_original_name,
+        "stored_path": relative_job_path(config_stored_path, job_root),
+        "resolved_path": "run_output/resolved_config.json",
+    }
+    if runtime_config_path is not None:
+        config_payload["runtime_path"] = relative_job_path(runtime_config_path, job_root)
+
     payload = {
         "version": 1,
         "job_id": job_id,
@@ -56,13 +67,14 @@ def write_job_manifest(
         "workflow": str(job.get("workflow") or ""),
         "created_at": job.get("created_at"),
         "submission_source": submission_source,
-        "config": {
-            "original_name": config_original_name,
-            "stored_path": relative_job_path(config_stored_path, job_root),
-            "resolved_path": "run_output/resolved_config.json",
-        },
+        "note": str(job.get("notes") or ""),
+        "config": config_payload,
         "inputs": [dict(item) for item in inputs],
     }
+    if source_job:
+        payload["source_job"] = dict(source_job)
+    if pyscf_config:
+        payload["pyscf_config"] = dict(pyscf_config)
     manifest_path.write_text(
         json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
