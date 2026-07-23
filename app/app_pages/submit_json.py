@@ -16,6 +16,7 @@ from app_core.json_submission import (
     configuration_summary,
     gui_defaults_from_config,
     input_mode,
+    normalize_runtime_config,
     parse_json_config,
     product_is_required,
     result_name,
@@ -246,11 +247,12 @@ if config_bytes is None:
     st.stop()
 
 try:
-    config = parse_json_config(config_bytes)
+    submitted_config = parse_json_config(config_bytes)
 except JsonSubmissionError as exc:
     st.error(str(exc))
     st.stop()
 
+config = normalize_runtime_config(submitted_config)
 mode = input_mode(config)
 source_identity = (
     f"{source_mode}|{source_job.get('job_id') if source_job else config_original_name}|".encode("utf-8")
