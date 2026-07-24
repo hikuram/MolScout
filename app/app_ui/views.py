@@ -43,6 +43,7 @@ from app_core.config import (
     XYZ_EXTENSIONS,
 )
 from app_core.job_runner import build_command, reload_job, stop_job, workflow_script_name
+from app_core.job_manifest import manifest_input, write_job_manifest
 from app_core.paths import APP_DIR, AUTO_REFRESH_SECONDS, SESSION_RETENTION_DAYS, WORKER_LOG_FILE, ensure_app_dirs
 from app_core.queue_manager import (
     delete_job_from_queue,
@@ -765,6 +766,18 @@ def all_result_files(run_dir: Path) -> list[Path]:
     for path in files:
         unique[path.resolve()] = path
     return sorted(unique.values(), key=lambda item: str(item.relative_to(run_dir)))
+
+
+def all_job_json_files(job: dict) -> tuple[Path, list[Path]]:
+    """Return JSON files from the complete job directory."""
+    root = job_dir(str(job["session_id"]), str(job["job_id"]))
+    if not root.exists():
+        return root, []
+    files = sorted(
+        [path for path in root.rglob("*.json") if path.is_file()],
+        key=lambda item: str(item.relative_to(root)),
+    )
+    return root, files
 
 
 def category_for_result_candidate(name: str) -> str:
@@ -2431,6 +2444,10 @@ PYSCF_XC_CANDIDATES = [
     "b973c",
     "r2scan3c",
     "wb97x3c",
+    "b97-d3bj/vdzp",
+    "r2scan-d4/vdzp",
+    "wb97x-d4/vdzp",
+    "b3lyp-d4/vdzp",
 ]
 
 
@@ -2915,10 +2932,17 @@ def render_job_submission(session: dict) -> None:
         extra_cols = st.columns(3)
         if refine_input_key not in st.session_state:
             st.session_state[refine_input_key] = mode == "reactant_product" and init_path_method != "SCAN"
+        refine_input_applicable = (
+            mode == "reactant_product"
+            and bool(do_path)
+            and str(module_settings["init_path_method"]).upper() in {"DMF", "NEB"}
+        )
+        if not refine_input_applicable:
+            st.session_state[refine_input_key] = False
         refine_input_on = extra_cols[0].checkbox(
             "Optimize initial structures",
             key=refine_input_key,
-            disabled=mode != "reactant_product",
+            disabled=not refine_input_applicable,
         )
         pick_optpoints_key = f"{session_id}_pick_optpoints"
         save_fig_key = f"{session_id}_savefig"
@@ -3123,16 +3147,41 @@ def render_job_submission(session: dict) -> None:
     job["config_overrides"]["PYSCF_CONFIG_FILE"] = str(pyscf_config_path)
 
     reactant_path = product_path = input_path = result_path = None
+    manifest_inputs: list[dict[str, str]] = []
     if mode == "reactant_product":
         if source_mode == "Upload new files":
             reactant_path = write_uploaded_file(reactant_file, input_root, reactant_file.name or "reactant.xyz")
+            manifest_inputs.append(manifest_input(
+                role="reactant",
+                original_name=reactant_file.name or "reactant.xyz",
+                stored_path=reactant_path,
+                job_root=job_root,
+            ))
             if product_file is not None:
                 product_path = write_uploaded_file(product_file, input_root, product_file.name or "product.xyz")
+                manifest_inputs.append(manifest_input(
+                    role="product",
+                    original_name=product_file.name or "product.xyz",
+                    stored_path=product_path,
+                    job_root=job_root,
+                ))
         else:
             sample_reactant, sample_product = sample_case_files(sample_case or "")
             reactant_path = copy_source_file(sample_reactant, input_root, "reactant.xyz")
+            manifest_inputs.append(manifest_input(
+                role="reactant",
+                original_name=sample_reactant.name,
+                stored_path=reactant_path,
+                job_root=job_root,
+            ))
             if sample_product is not None:
                 product_path = copy_source_file(sample_product, input_root, "product.xyz")
+                manifest_inputs.append(manifest_input(
+                    role="product",
+                    original_name=sample_product.name,
+                    stored_path=product_path,
+                    job_root=job_root,
+                ))
         
         job["inputs"] = [str(reactant_path)]
         if product_path:
@@ -3140,16 +3189,32 @@ def render_job_submission(session: dict) -> None:
     elif mode == "single_input":
         if source_mode == "Upload new files":
             input_path = write_uploaded_file(input_file, input_root, input_file.name or "input.traj")
+            original_input_name = input_file.name or "input.traj"
         else:
             input_path = copy_source_file(existing_input, input_root, existing_input.name)
+            original_input_name = existing_input.name
+        manifest_inputs.append(manifest_input(
+            role="input",
+            original_name=original_input_name,
+            stored_path=input_path,
+            job_root=job_root,
+        ))
         job["inputs"] = [str(input_path)]
     else:
         if source_mode == "Upload new files":
             input_path = write_uploaded_file(input_file, input_root, input_file.name or "input.traj")
             result_path = write_uploaded_file(result_file, output_dir, result_name)
+            original_input_name = input_file.name or "input.traj"
         else:
             input_path = copy_source_file(existing_input, input_root, existing_input.name)
             result_path = copy_source_file(existing_result, output_dir, result_name)
+            original_input_name = existing_input.name
+        manifest_inputs.append(manifest_input(
+            role="input",
+            original_name=original_input_name,
+            stored_path=input_path,
+            job_root=job_root,
+        ))
         job["inputs"] = [str(input_path), str(result_path)]
 
     stdout_log = job_root / "stdout.log"
@@ -3170,6 +3235,14 @@ def render_job_submission(session: dict) -> None:
         tblite_method=job["tblite_method"],
         config_overrides=job["config_overrides"],
     )
+    manifest_path = write_job_manifest(
+        job,
+        submission_source="gui",
+        config_original_name=None,
+        config_stored_path=job_root / "submitted_config.json",
+        inputs=manifest_inputs,
+    )
+    job["manifest_path"] = str(manifest_path)
     save_job(job)
     enqueue_job(job)
     ensure_worker_running()
@@ -3390,14 +3463,27 @@ def render_concat_submission(session: dict) -> None:
     pyscf_config_path.write_text(json.dumps(session.get("pyscf_config", default_pyscf_config()), ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
     cat_paths = []
+    manifest_inputs: list[dict[str, str]] = []
     if source_mode == "Upload files":
-        for uf in uploaded_files:
+        for index, uf in enumerate(uploaded_files, start=1):
             saved_path = write_uploaded_file(uf, input_root, uf.name)
             cat_paths.append(saved_path)
+            manifest_inputs.append(manifest_input(
+                role=f"input_{index:03d}",
+                original_name=uf.name,
+                stored_path=saved_path,
+                job_root=job_root,
+            ))
     else:
-        for ef in selected_existing:
+        for index, ef in enumerate(selected_existing, start=1):
             saved_path = copy_source_file(ef, input_root, ef.name)
             cat_paths.append(saved_path)
+            manifest_inputs.append(manifest_input(
+                role=f"input_{index:03d}",
+                original_name=ef.name,
+                stored_path=saved_path,
+                job_root=job_root,
+            ))
             
     job["inputs"] = [str(p) for p in cat_paths]
 
@@ -3448,6 +3534,14 @@ def render_concat_submission(session: dict) -> None:
     )
 
     job["command"] = command
+    manifest_path = write_job_manifest(
+        job,
+        submission_source="gui",
+        config_original_name=None,
+        config_stored_path=job_root / "submitted_config.json",
+        inputs=manifest_inputs,
+    )
+    job["manifest_path"] = str(manifest_path)
 
     save_job(job)
     enqueue_job(job)
@@ -3629,7 +3723,8 @@ def render_session_jobs(session: dict) -> None:
 def render_job_results(job: dict) -> None:
     run_dir = Path(job["output_dir"])
     files = all_result_files(run_dir)
-    if not files:
+    job_root, job_json_files = all_job_json_files(job)
+    if not files and not job_json_files:
         st.info("No outputs yet.")
         return
 
@@ -3650,8 +3745,11 @@ def render_job_results(job: dict) -> None:
 
     if result_view == "Overview":
         rows = [{"path": str(path.relative_to(run_dir)), "size": file_size_label(path)} for path in files]
-        st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
-        render_molscout_log_expander(files, run_dir)
+        if rows:
+            st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
+            render_molscout_log_expander(files, run_dir)
+        else:
+            st.info("Calculation outputs are not available yet. Job JSON files can be viewed in the Json tab.")
     elif result_view == "Logs":
         log_files = [path for path in files if path.suffix.lower() in LOG_EXTENSIONS]
         if log_files:
@@ -3661,13 +3759,14 @@ def render_job_results(job: dict) -> None:
         else:
             st.info("No .log files.")
     elif result_view == "Json":
-        json_files = [path for path in files if path.suffix.lower() in JSON_EXTENSIONS]
-        if json_files:
-            labels = [str(path.relative_to(run_dir)) for path in json_files]
-            selected = json_files[labels.index(st.selectbox("JSON file", labels, key=f"json_{job['job_id']}"))]
+        if job_json_files:
+            labels = [str(path.relative_to(job_root)) for path in job_json_files]
+            selected = job_json_files[
+                labels.index(st.selectbox("JSON file", labels, key=f"json_{job['job_id']}"))
+            ]
             st.code(tail_text(selected, max_lines=280) or "(empty file)", language="json")
         else:
-            st.info("No JSON files.")
+            st.info("No JSON files are available for this job.")
     elif result_view == "XYZ":
         xyz_files = [path for path in files if path.suffix.lower() in XYZ_EXTENSIONS]
         if xyz_files:

@@ -255,21 +255,41 @@ class PySCFCalculator(Calculator):
     def __init__(self, method, xc_3c: Optional[str] = None, **kwargs):
         self.method = method
         self.xc_3c = xc_3c
+        self.e_scanner = None
         self.g_scanner = None
+        self.method_prepared = False
         self.config = getattr(method, "_pyscf_3c_config", {})
         super().__init__(**kwargs)
 
-    def _ensure_scanner(self):
-        if self.g_scanner is not None:
+    def _ensure_method_prepared(self):
+        if self.method_prepared:
             return
 
         self.method = _prepare_method_before_scanner(self.method, self.config)
+        self.method_prepared = True
+
+    def _ensure_energy_scanner(self):
+        if self.e_scanner is not None:
+            return
+
+        self._ensure_method_prepared()
+        self.g_scanner = None
+        self.e_scanner = self.method.as_scanner()
+
+    def _ensure_gradient_scanner(self):
+        if self.g_scanner is not None:
+            return
+
+        self._ensure_method_prepared()
+        self.e_scanner = None
         self.g_scanner = get_gradient_method(self.method, xc_3c=self.xc_3c).as_scanner()
 
     def set(self, **kwargs):
         changed_parameters = super().set(**kwargs)
         if changed_parameters:
+            self.e_scanner = None
             self.g_scanner = None
+            self.method_prepared = False
             self.reset()
         return changed_parameters
 
@@ -290,11 +310,18 @@ class PySCFCalculator(Calculator):
             geom = list(zip(atomic_numbers, positions))
 
         mol.set_geom_(geom, unit="Angstrom")
-        self._ensure_scanner()
 
-        energy, gradients = self.g_scanner(mol)
+        gradients = None
+        if "forces" in properties:
+            self._ensure_gradient_scanner()
+            energy, gradients = self.g_scanner(mol)
+            scanner = self.g_scanner
+        else:
+            self._ensure_energy_scanner()
+            energy = self.e_scanner(mol)
+            scanner = self.e_scanner
 
-        scf_obj = _find_scf_object(self.g_scanner)
+        scf_obj = _find_scf_object(scanner)
         if scf_obj is None:
             scf_obj = _find_scf_object(self.method)
 
@@ -305,11 +332,14 @@ class PySCFCalculator(Calculator):
 
         if not bool(getattr(scf_obj, "converged", False)):
             raise CalculationFailed(
-                "PySCF SCF failed to converge; discarding unconverged-SCF gradient."
+                "PySCF SCF failed to converge; discarding the requested result."
             )
 
-        if not np.isfinite(energy) or not np.all(np.isfinite(gradients)):
-            raise CalculationFailed("PySCF returned non-finite energy or gradients.")
+        if not np.isfinite(energy):
+            raise CalculationFailed("PySCF returned a non-finite energy.")
+        if gradients is not None and not np.all(np.isfinite(gradients)):
+            raise CalculationFailed("PySCF returned non-finite gradients.")
 
         self.results["energy"] = energy * units.Hartree
-        self.results["forces"] = -gradients * (units.Hartree / units.Bohr)
+        if gradients is not None:
+            self.results["forces"] = -gradients * (units.Hartree / units.Bohr)

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import runpy
 import sys
 
@@ -30,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--product")
     parser.add_argument("--input")
     parser.add_argument("--catfiles", nargs="+")
-    parser.add_argument("--config-json", default="")
+    parser.add_argument("--config")
     return parser.parse_args()
 
 
@@ -39,33 +38,36 @@ def apply_workflow_flags(args: argparse.Namespace) -> None:
         sys.path.insert(0, str(CORE_DIR))
 
     import default_config as g
+    from config_manager import apply_config, apply_config_file
 
     is_cat_mode = bool(args.catfiles)
-    g.INIT_PATH_SEARCH_ON = bool(args.initial_path or is_cat_mode)
-    g.INIT_RECALC_MODE_ON = False
-    g.REFINE_INPUT_ON = bool(args.initial_path or is_cat_mode)
-    g.USE_SELLA_IN_OPT = False
-    g.TSOPT_ON = bool(args.ts_opt)
-    g.IRC_ON = bool(args.irc)
-    g.VIB_ON = bool(args.vib)
-    g.REFINE_ENERGY_ON = bool(args.refine)
-    g.OTHER_JOBS_EXAMPLE_ON = False
-    g.WRITE_SUGGESTIONS_ON = False
-    g.SAVE_FIG_ON = True
-    g.PRESERVE_CSV_ON = args.workflow == "Figure refresh only"
-    g.THERMO_TEMPERATURE = float(args.temperature)
-    g.TBLITE_METHOD = args.tblite_method
+    workflow_overrides = {
+        "INIT_PATH_SEARCH_ON": bool(args.initial_path or is_cat_mode),
+        "INIT_RECALC_MODE_ON": False,
+        "REFINE_INPUT_ON": bool(args.initial_path or is_cat_mode),
+        "USE_SELLA_IN_OPT": False,
+        "TSOPT_ON": bool(args.ts_opt),
+        "IRC_ON": bool(args.irc),
+        "VIB_ON": bool(args.vib),
+        "REFINE_ENERGY_ON": bool(args.refine),
+        "OTHER_JOBS_EXAMPLE_ON": False,
+        "WRITE_SUGGESTIONS_ON": False,
+        "SAVE_FIG_ON": True,
+        "PRESERVE_CSV_ON": args.workflow == "Figure refresh only",
+        "THERMO_TEMPERATURE": float(args.temperature),
+        "TBLITE_METHOD": args.tblite_method,
+    }
 
     if args.workflow == "Figure refresh only":
-        g.TSOPT_ON = False
-        g.IRC_ON = False
-        g.VIB_ON = False
-        g.REFINE_ENERGY_ON = False
+        workflow_overrides.update({
+            "TSOPT_ON": False,
+            "IRC_ON": False,
+            "VIB_ON": False,
+            "REFINE_ENERGY_ON": False,
+        })
 
-    if args.config_json:
-        overrides = json.loads(args.config_json)
-        for key, value in overrides.items():
-            setattr(g, key, value)
+    apply_config(g, workflow_overrides)
+    apply_config_file(g, args.config)
 
 
 def build_script_argv(args: argparse.Namespace) -> list[str]:

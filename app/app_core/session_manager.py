@@ -108,6 +108,7 @@ def default_job_payload(session_id: str, job_id: str) -> dict:
         "output_dir": str(job_root / "run_output"),
         "stdout_log": str(job_root / "stdout.log"),
         "command": [],
+        "manifest_path": str(job_root / "job_manifest.json"),
         "notes": "",
         "delete_requested": False,
         "delete_requested_at": None,

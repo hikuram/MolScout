@@ -24,6 +24,13 @@ CALC_TYPE: str = "orbmol" # "orbmol", "orbmol+alpb", "pyscf", "pyscf_high"
 REFINE_CALC_TYPE: str = "pyscf_high"
 DEVICE: str = "cuda" # "cuda" or "cpu"
 
+# Fraction of total CUDA memory available to PyTorch after the CUDA Skala
+# backend is selected. The limit is applied once, immediately before
+# skala.gpu4pyscf.SkalaKS is imported and constructed.
+# It does not currently limit OrbMol, gpu4pyscf, or CuPy allocations.
+# Set to None to disable. Valid range: 0 < value <= 1.
+PYTORCH_GPU_MEMORY_FRACTION: float | None = 0.50
+
 # OrbMol settings
 ORBMOL_VERSION: str = "v2" # "v1", "v2"
 
@@ -37,6 +44,9 @@ ALPB_SOLVENT: str = "water"
 MULT: int = 1
 THERMO_TEMPERATURE: float = 298.15
 THERMO_ATOMOSPHERE: float = 101325.0
+# Optional diagnostic columns written during vibrational analysis.
+# Supported values: "energy_LL_vib [kcal/mol]", "thermal_corr_G [kcal/mol]"
+THERMO_EXTRA_CSV_COLUMNS: list = []
 
 # Module-specific settings
 # -DMF
@@ -68,3 +78,11 @@ FIXED_ATOMS: list = []     # Fixed atoms constraints (list of integer indices, e
 # Physical constants
 EV_TO_KCAL_MOL: float = 23.0605
 EV_TO_HARTREE: float = 1 / 27.2114  # approx. 0.0367493
+
+def as_dict() -> dict[str, object]:
+    """Return all public uppercase configuration values."""
+    return {
+        key: value
+        for key, value in globals().items()
+        if key.isupper() and not key.startswith("_")
+    }

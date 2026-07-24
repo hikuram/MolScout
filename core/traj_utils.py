@@ -140,6 +140,10 @@ def write_energies(traj_name, csv_name=None, energy_recalc=False, previous_image
 
     pos_0 = None
     pos_prev = None
+    atomic_numbers_0 = None
+    atomic_numbers_prev = None
+    rmsd_vs_0_skipped = 0
+    rmsd_vs_prev_skipped = 0
     
     # Setup for SCAN coordinate extraction
     is_scan = (getattr(g, 'INIT_PATH_METHOD', '') == 'SCAN')
@@ -170,35 +174,57 @@ def write_energies(traj_name, csv_name=None, energy_recalc=False, previous_image
                 energy_ev, energy_hartree, energy_kcal = None, None, None
 
             # === RMSD calculation (Heavy atoms only) ===
-            rmsd_0 = None
-            rmsd_prev = None
+            rmsd_0 = np.nan
+            rmsd_prev = np.nan
             if calc_rmsd:
-                # Extract positions and atomic numbers
                 pos = atoms.get_positions()
                 atomic_numbers = atoms.get_atomic_numbers()
-                
-                # Filter out light elements (Hydrogen, Z=1)
+
+                # Hydrogen atoms are intentionally excluded from this metric.  The
+                # remaining atom identity/order must still match because Kabsch RMSD
+                # assumes a one-to-one correspondence between coordinate rows.
                 heavy_mask = atomic_numbers > 1
+                heavy_atomic_numbers = atomic_numbers[heavy_mask]
                 heavy_pos = pos[heavy_mask]
-                
                 if len(heavy_pos) > 0:
-                    # Translate centroid to origin
                     heavy_pos_centered = heavy_pos - rmsd.centroid(heavy_pos)
-                    
-                    if i == 0:
-                        pos_0 = heavy_pos_centered
-                        pos_prev = heavy_pos_centered
-                        rmsd_0 = 0.0
-                        rmsd_prev = 0.0
-                    else:
-                        # Calculate optimal rotation and RMSD using Kabsch algorithm
-                        rmsd_0 = rmsd.kabsch_rmsd(pos_0, heavy_pos_centered)
-                        rmsd_prev = rmsd.kabsch_rmsd(pos_prev, heavy_pos_centered)
-                        pos_prev = heavy_pos_centered
                 else:
-                    # Fallback if the system only contains hydrogens (edge case)
+                    heavy_pos_centered = np.empty((0, 3), dtype=float)
+
+                if i == 0:
+                    pos_0 = heavy_pos_centered.copy()
+                    pos_prev = heavy_pos_centered.copy()
+                    atomic_numbers_0 = heavy_atomic_numbers.copy()
+                    atomic_numbers_prev = heavy_atomic_numbers.copy()
                     rmsd_0 = 0.0
                     rmsd_prev = 0.0
+                else:
+                    same_as_0 = np.array_equal(atomic_numbers_0, heavy_atomic_numbers)
+                    same_as_prev = np.array_equal(atomic_numbers_prev, heavy_atomic_numbers)
+
+                    if same_as_0:
+                        rmsd_0 = (
+                            0.0
+                            if len(heavy_atomic_numbers) == 0
+                            else rmsd.kabsch_rmsd(pos_0, heavy_pos_centered)
+                        )
+                    else:
+                        rmsd_vs_0_skipped += 1
+
+                    if same_as_prev:
+                        rmsd_prev = (
+                            0.0
+                            if len(heavy_atomic_numbers) == 0
+                            else rmsd.kabsch_rmsd(pos_prev, heavy_pos_centered)
+                        )
+                    else:
+                        rmsd_vs_prev_skipped += 1
+
+                    # Always advance the previous-frame reference.  This lets RMSD
+                    # resume normally inside the next same-composition segment of a
+                    # concatenated batch trajectory.
+                    pos_prev = heavy_pos_centered.copy()
+                    atomic_numbers_prev = heavy_atomic_numbers.copy()
             # ===========================================
 
             row = [i, energy_ev, energy_hartree, energy_kcal]
@@ -232,6 +258,14 @@ def write_energies(traj_name, csv_name=None, energy_recalc=False, previous_image
             
     if energy_recalc:
         os.replace(tmp_name, traj_name)
+
+    if calc_rmsd and (rmsd_vs_0_skipped or rmsd_vs_prev_skipped):
+        log(
+            "Warn",
+            "Skipped heavy-atom RMSD for incompatible concatenated frames "
+            f"(vs frame 0: {rmsd_vs_0_skipped}, vs previous frame: {rmsd_vs_prev_skipped}). "
+            "The corresponding CSV values were written as NaN.",
+        )
         
     cols = ["# image", "energy [eV]", "energy [hartree]", "energy [kcal/mol]"]
     if calc_rmsd:
