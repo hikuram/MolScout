@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import math
 from datetime import datetime
+from io import StringIO
 from pathlib import Path
 from typing import Any
 
@@ -89,6 +90,21 @@ def load_structures(path_text: str, mtime_ns: int, size_bytes: int, max_frames: 
         if max_frames > 0 and len(frames) >= max_frames:
             break
     return frames
+
+
+@st.cache_data(show_spinner=False)
+def trajectory_to_extxyz(path_text: str, mtime_ns: int, size_bytes: int) -> bytes:
+    """Convert every frame in a trajectory file to extended XYZ bytes."""
+    import ase.io
+
+    del mtime_ns, size_bytes
+    frames = list(ase.io.iread(path_text, index=":"))
+    if not frames:
+        return b""
+
+    buffer = StringIO()
+    ase.io.write(buffer, frames, format="extxyz")
+    return buffer.getvalue().encode("utf-8")
 
 
 def _as_float(value: Any) -> float:
