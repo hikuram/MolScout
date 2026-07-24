@@ -2444,6 +2444,10 @@ PYSCF_XC_CANDIDATES = [
     "b973c",
     "r2scan3c",
     "wb97x3c",
+    "b97-d3bj/vdzp",
+    "r2scan-d4/vdzp",
+    "wb97x-d4/vdzp",
+    "b3lyp-d4/vdzp",
 ]
 
 
