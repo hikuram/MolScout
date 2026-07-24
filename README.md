@@ -1,127 +1,114 @@
 # MolScout
 
-MolScout は、反応経路探索と後続の分子計算を自動化するための Python toolkit です。初期経路生成、transition-state optimization、intrinsic reaction coordinate 計算、vibrational analysis、熱化学量評価、および任意の高精度 energy refinement を一連の workflow として扱います。
+MolScout is a Python toolkit for automated reaction-path exploration and follow-up molecular calculations. It coordinates initial path generation, transition-state optimization, intrinsic reaction coordinate calculations, vibrational analysis, thermochemical evaluation, and optional high-level energy refinement as a single workflow.
 
-本リポジトリは、共有実行用の Streamlit application と、科学計算 workflow を格納する `core/` directory を中心に構成されています。従来の個別 workflow script は整理済みであり、workflow stage の選択は application wrapper と `core/default_config.py` によって制御します。
+This repository is centered on a shared Streamlit application and the scientific workflow code under `core/`. Earlier standalone workflow scripts have been consolidated; workflow-stage selection is now controlled by the application wrapper and `core/default_config.py`.
 
-## 主な機能
+## Main capabilities
 
-- DMF、NEB、SCAN、または連結済み trajectory による初期経路生成
-- ASE / Sella を用いた transition-state optimization と adaptive IRC 計算
-- 低振動数・数値誤差に配慮した vibrational analysis と熱化学量評価
-- OrbMol、xTB/ALPB delta correction、PySCF、gpu4pyscf 支援計算に対応した calculator backend
-- `.traj`、`.xyz`、`.csv`、log、figure などによる file-based result handoff
-- 共有 workstation または remote server での実行を想定した Streamlit queue
+- Initial path generation by DMF, NEB, SCAN, or concatenated input trajectories.
+- Transition-state optimization and adaptive IRC calculations using ASE/Sella-based routines.
+- Vibrational analysis and thermochemistry with safeguards for low-frequency and numerical artifacts.
+- Calculator backends for OrbMol, xTB/ALPB delta correction, PySCF, and gpu4pyscf-assisted runs.
+- File-based result handoff through `.traj`, `.xyz`, `.csv`, log, figure, JSON, and Molden outputs.
+- Shared Streamlit queue for running jobs on a common workstation or remote server.
 
-## リポジトリ構成
+## Repository layout
 
 ```text
 MolScout/
-|-- app/                 # Streamlit UI、queue、session、archive 関連
-|-- core/                # 科学計算 workflow modules と sample input
-|-- docs/                # architecture、workflow、backend、environment notes
-|-- requirements.txt     # 非 Docker 環境向け Python dependencies
-`-- Dockerfile           # 推奨 environment definition
+|-- app/                 # Streamlit UI, queue, sessions, archives, and monitoring
+|-- core/                # Scientific workflow modules and bundled sample inputs
+|-- docs/                # Architecture, workflow, backend, and environment notes
+|-- requirements.txt     # Python dependencies for non-Docker setup
+`-- Dockerfile           # Recommended environment definition
 ```
 
 ## Installation
 
-通常利用では、同梱の Dockerfile を用いることを推奨します。計算環境には CUDA、compiled library、optimizer backend に依存する package が含まれるため、Docker image を利用することで app と command-line workflow の動作差を抑えられます。
+Using the provided Dockerfile is recommended for routine use. The calculation stack includes packages with CUDA, compiled-library, and optimizer dependencies, so Docker gives the most reproducible starting point for app and command-line use.
 
-リポジトリ root で image を build します。
+Build the image from the repository root:
 
 ```bash
 docker build -t molscout .
 ```
 
-GPU を利用する interactive container を起動します。
+Start an interactive container with GPU access:
 
 ```bash
 docker run --gpus all -it --rm -p 8501:8501 molscout
 ```
 
-container 内で Streamlit app を起動します。
+Inside the container, launch the Streamlit app when needed:
 
 ```bash
 streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
 ```
 
-開発や軽量な確認に限り、pip による直接 setup も可能です。ただし backend の挙動は platform に依存する場合があります。
+A direct pip setup is still possible for development or lightweight checks, but backend behavior may differ by platform:
 
 ```bash
 pip install -r requirements.txt
 pip install -r app/requirements.txt
 ```
 
-## 動作確認環境
+## Verified environment
 
-現在の確認環境では、以下の package version を使用しました。
+The following package versions were used for the current verification environment.
 
 | Package | Version |
 |---|---:|
 | ase | 3.28.0 |
-| matplotlib | 3.10.9 |
-| numpy | 2.4.6 |
-| orb-models | 0.7.0 |
-| pandas | 3.0.3 |
-| pillow | 12.2.0 |
+| sella | 0.0.1.dev386+g21c6dc7bf |
 | pydmf | 1.2.1 |
 | pyscf | 2.13.0 |
-| rmsd | 1.6.5 |
-| scipy | 1.17.1 |
-| seaborn | 0.13.2 |
-| sella | 0.0.1.dev386+g21c6dc7bf |
-| streamlit | 1.58.0 |
+| orb-models | 0.7.0 |
 | tblite | 0.6.0 |
 | torch | 2.12.0 |
 
-## Streamlit app の起動
+## Running the Streamlit app
 
-Docker image から起動する場合:
+From the Docker image:
 
 ```bash
 streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
 ```
 
-依存関係を導入済みの local checkout から起動する場合:
+From a local checkout with dependencies already installed:
 
 ```bash
 streamlit run app/streamlit_app.py
 ```
 
-app は session data、queued jobs、logs、generated archives を `app/data/` 以下に書き込みます。科学計算の default settings は `core/default_config.py` に保持され、job ごとの override は `app_core.workflow_runner` が適用します。`core/` 以下の source file は app から書き換えません。
+The app writes session data, queued jobs, logs, and generated archives under `app/data/`. Scientific defaults remain in `core/default_config.py`; per-job overrides are applied by `app_core.workflow_runner` without modifying source files under `core/`.
 
-## core workflow の直接実行
+## Running the core workflow directly
 
-command-line 操作が必要な場合は、reactant/product workflow を直接起動できます。
+A full reactant/product workflow can be launched directly when command-line operation is preferred:
 
 ```bash
 python core/molscout.py -d <dest_dir> -c <charge> -m orbmol -r reactant.xyz -p product.xyz
 ```
 
-IRC-only、VIB-only、figure refresh などの stage-specific run では、workflow flags を一貫して設定するため、Streamlit app または app wrapper の利用を推奨します。
+For stage-specific runs such as IRC-only, VIB-only, or figure refresh, use the Streamlit app or the app wrapper so that the relevant workflow flags are set consistently:
 
 ```bash
 PYTHONPATH=app:core python -m app_core.workflow_runner \
-  --workflow "VIB workflow only" \
-  --directory <dest_dir> \
-  --charge <charge> \
-  --method orbmol \
-  --input input.traj \
-  --vib
+  --job-json app/data/sessions/<session>/jobs/<job>/job.json
 ```
 
 ## Documentation
 
-- `docs/01_architecture.md`: repository structure と data flow
-- `docs/02_workflow_details.md`: workflow stage ごとの動作
-- `docs/03_calculators.md`: calculator backend notes
-- `docs/04_environment.md`: installation policy と確認済み package versions
+- `docs/01_architecture.md`: Repository structure and data flow.
+- `docs/02_workflow_details.md`: Stage-level workflow behavior.
+- `docs/03_calculators.md`: Calculator backend notes.
+- `docs/04_environment.md`: Installation policy and verified package versions.
 
 ## License
 
-本 project は GPL-3.0 license の下で配布されます。詳細は `LICENSE` を参照してください。
+This project is distributed under the GPL-3.0 license. See `LICENSE` for details.
 
 ## Acknowledgments
 
-本 workflow 設計の一部は ColabReaction および redox_benchmark を参考にしています。production calculation で利用する third-party project と dependencies については、それぞれの license と citation requirements を確認してください。
+Parts of the workflow design were informed by ColabReaction and redox_benchmark. Respect the licenses and citation requirements of those projects and all third-party dependencies used in production calculations.

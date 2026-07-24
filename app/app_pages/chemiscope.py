@@ -44,7 +44,7 @@ def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFram
 
 
 def render_dependency_hint(error: Exception) -> None:
-    st.error("Trajectory visualization に必要な dependency が不足しています。")
+    st.error("Missing dependencies required for trajectory visualization.")
     st.code(
         "pip install ase pandas numpy 'chemiscope[streamlit]'",
         language="bash",
@@ -58,11 +58,11 @@ def filter_files_for_jobs(files_df: pd.DataFrame, job_ids: list[str]) -> pd.Data
 
 
 st.markdown("## :material/animation: Chemiscope")
-st.caption("選択中セッションの trajectory / XYZ を chemiscope で確認します。")
+st.caption("Inspect trajectories and XYZ files from the selected session with chemiscope.")
 
 session = get_selected_session()
 if not session:
-    st.info("サイドバーからセッションを作成してください。")
+    st.info("Create a session from the sidebar.")
     st.stop()
 
 session_id = session["session_id"]
@@ -73,7 +73,7 @@ st.markdown("#### Session jobs")
 st.caption(f"Directory to scan: `{root}`")
 
 if not jobs:
-    st.info("このセッションにはまだジョブがありません。")
+    st.info("This session has no jobs yet.")
     st.stop()
 
 jobs_df = pd.DataFrame(jobs)
@@ -111,7 +111,7 @@ selected_indices = [
 ]
 
 if not selected_indices:
-    st.info("👆 trajectory を探すジョブを上のテーブルで 1 件以上選択してください。")
+    st.info("👆 Select one or more jobs in the table above to search for trajectory files.")
     st.stop()
 
 selected_job_ids = display_jobs_df.iloc[selected_indices]["job_id"].astype(str).tolist()
@@ -170,7 +170,7 @@ if not files_df.empty:
     files_df = filter_files_for_jobs(files_df, selected_job_ids)
 
 if files_df.empty:
-    st.info("選択した job 内に trajectory file が見つかりません。")
+    st.info("No trajectory files were found in the selected jobs.")
     st.stop()
 
 filter_key = f"{session_id}_chemiscope_traj_filter_{'-'.join(selected_job_ids)}"
@@ -228,7 +228,7 @@ except Exception as error:
     st.stop()
 
 if not structures:
-    st.warning("選択したファイルから structure を読み取れませんでした。")
+    st.warning("Could not read structures from the selected file.")
     st.stop()
 
 frame_table = build_frame_table(structures)
@@ -258,7 +258,7 @@ with right:
         plot_col = st.selectbox("Y axis", options=plot_cols, key=f"{session_id}_chemiscope_y_axis")
         st.line_chart(frame_table, x="step", y=plot_col, height=320)
     else:
-        st.info("Atoms.info / arrays に energy または force の数値プロパティが見つかりません。")
+        st.info("No numeric energy or force properties were found in Atoms.info or arrays.")
 
 st.markdown("#### Structure viewer")
 try:

@@ -9,11 +9,11 @@ from app_ui.sidebar import get_selected_session
 
 
 st.markdown("## :material/monitoring: Results")
-st.caption("選択中セッションのジョブ、ログ、生成物、ダウンロードを確認します。")
+st.caption("View jobs, logs, generated outputs, and downloads for the selected session.")
 
 session = get_selected_session()
 if session:
     render_session_jobs(session)
 else:
-    st.info("サイドバーからセッションを作成してください。")
+    st.info("Create a session from the sidebar.")
 

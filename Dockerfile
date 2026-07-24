@@ -70,7 +70,8 @@ RUN meson setup _build --prefix=/usr/local -Dpython=true \
  && meson install -C _build
 RUN pip3 install /opt/tblite/python
 
-RUN git clone -b skala-ja --depth 1 https://github.com/hikuram/MolScout.git /opt/MolScout
+ARG MOLSCOUT_BRANCH=main
+RUN git clone --branch "${MOLSCOUT_BRANCH}" --depth 1 https://github.com/hikuram/MolScout.git /opt/MolScout
 ENV PYTHONPATH="/opt/MolScout/core:${PYTHONPATH}"
 
 # Install fonts and plotting tools
