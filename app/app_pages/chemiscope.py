@@ -44,7 +44,7 @@ def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFram
 
 
 def render_dependency_hint(error: Exception) -> None:
-    st.error("Missing dependencies required for trajectory visualization.")
+    st.error("Required dependencies for trajectory visualization are missing.")
     st.code(
         "pip install ase pandas numpy 'chemiscope[streamlit]'",
         language="bash",
@@ -58,11 +58,11 @@ def filter_files_for_jobs(files_df: pd.DataFrame, job_ids: list[str]) -> pd.Data
 
 
 st.markdown("## :material/animation: Chemiscope")
-st.caption("Inspect trajectories and XYZ files from the selected session with chemiscope.")
+st.caption("Inspect trajectory and XYZ files from the selected session with Chemiscope.")
 
 session = get_selected_session()
 if not session:
-    st.info("Create a session from the sidebar.")
+    st.info("Create or select a session from the sidebar first.")
     st.stop()
 
 session_id = session["session_id"]
@@ -73,7 +73,7 @@ st.markdown("#### Session jobs")
 st.caption(f"Directory to scan: `{root}`")
 
 if not jobs:
-    st.info("This session has no jobs yet.")
+    st.info("This session does not contain any jobs yet.")
     st.stop()
 
 jobs_df = pd.DataFrame(jobs)
@@ -111,7 +111,7 @@ selected_indices = [
 ]
 
 if not selected_indices:
-    st.info("👆 Select one or more jobs in the table above to search for trajectory files.")
+    st.info("Select one or more jobs in the table above to search for trajectory files.")
     st.stop()
 
 selected_job_ids = display_jobs_df.iloc[selected_indices]["job_id"].astype(str).tolist()
@@ -175,7 +175,7 @@ if files_df.empty:
 
 filter_key = f"{session_id}_chemiscope_traj_filter_{'-'.join(selected_job_ids)}"
 selected_filter = st.segmented_control(
-    "ファイル名フィルター",
+    "Filename filter",
     options=list(TRAJECTORY_FILTERS),
     default="*.traj",
     key=filter_key,
@@ -183,13 +183,13 @@ selected_filter = st.segmented_control(
 filtered_files_df = filter_trajectory_files(files_df, str(selected_filter or "*.traj"))
 
 if filtered_files_df.empty:
-    st.info("このフィルターに一致する trajectory file はありません。")
+    st.info("No trajectory files match this filter.")
     st.stop()
 
 st.markdown("#### Found trajectory files")
-st.caption(f"`{selected_filter}` に一致するファイル: {len(filtered_files_df):,} 件")
+st.caption(f"Files matching `{selected_filter}`: {len(filtered_files_df):,}")
 if include_xyz and selected_filter == "*.traj":
-    st.caption("Include XYZ が有効なため、XYZ / extxyz file も表示しています。")
+    st.caption("XYZ and extxyz files are also shown because Include XYZ is enabled.")
 display_df = filtered_files_df[["rel_path", "suffix", "size_kb", "modified"]].copy()
 display_df["size"] = filtered_files_df["path"].map(
     lambda value: file_size_label(Path(str(value)))
@@ -228,7 +228,7 @@ except Exception as error:
     st.stop()
 
 if not structures:
-    st.warning("Could not read structures from the selected file.")
+    st.warning("No structures could be read from the selected file.")
     st.stop()
 
 frame_table = build_frame_table(structures)
@@ -287,7 +287,7 @@ except Exception as error:
     st.exception(error)
 
 if selected_path.suffix.lower() == ".traj":
-    st.markdown("#### trajectoryのダウンロード")
+    st.markdown("#### Download trajectory")
     try:
         extxyz_data = trajectory_to_extxyz(
             str(selected_path),
@@ -296,17 +296,17 @@ if selected_path.suffix.lower() == ".traj":
         )
         if extxyz_data:
             st.download_button(
-                "選択中のtrajectoryをextxyzでダウンロード",
+                "Download selected trajectory as extxyz",
                 data=extxyz_data,
                 file_name=f"{selected_path.name}.xyz",
                 mime="chemical/x-xyz",
                 width="stretch",
             )
         else:
-            st.warning("選択したtrajectoryに出力可能なframeがありません。")
+            st.warning("The selected trajectory contains no frames that can be exported.")
     except ImportError as error:
         render_dependency_hint(error)
     except Exception as error:
-        st.error("extxyzへの変換に失敗しました。")
+        st.error("Failed to convert the trajectory to extxyz.")
         st.exception(error)
 
