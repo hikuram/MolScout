@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import hashlib
 from pathlib import Path
 
@@ -16,10 +17,30 @@ from app_core.trajectory_viewer import (
     finite_column,
     load_structures,
     scan_trajectory_files,
+    trajectory_to_extxyz,
     viewer_key,
 )
 from app_ui.sidebar import get_selected_session
 from app_ui.views import file_size_label, format_app_time
+
+
+TRAJECTORY_FILTERS = (
+    "*.traj",
+    "init_path.traj",
+    "irc.traj",
+    "optpoints.traj",
+    "*_opt.traj",
+    "*_tsopt.traj",
+)
+
+
+def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFrame:
+    if files_df.empty or pattern == "*.traj":
+        return files_df.reset_index(drop=True)
+
+    names = files_df["rel_path"].map(lambda value: Path(str(value)).name)
+    mask = names.map(lambda name: fnmatch.fnmatchcase(name, pattern))
+    return files_df[mask].reset_index(drop=True)
 
 
 def render_dependency_hint(error: Exception) -> None:
@@ -152,22 +173,43 @@ if files_df.empty:
     st.info("選択した job 内に trajectory file が見つかりません。")
     st.stop()
 
+filter_key = f"{session_id}_chemiscope_traj_filter_{'-'.join(selected_job_ids)}"
+selected_filter = st.segmented_control(
+    "ファイル名フィルター",
+    options=list(TRAJECTORY_FILTERS),
+    default="*.traj",
+    key=filter_key,
+)
+filtered_files_df = filter_trajectory_files(files_df, str(selected_filter or "*.traj"))
+
+if filtered_files_df.empty:
+    st.info("このフィルターに一致する trajectory file はありません。")
+    st.stop()
+
 st.markdown("#### Found trajectory files")
-display_df = files_df[["rel_path", "suffix", "size_kb", "modified"]].copy()
-display_df["size"] = files_df["path"].map(lambda value: file_size_label(Path(str(value))))
+st.caption(f"`{selected_filter}` に一致するファイル: {len(filtered_files_df):,} 件")
+if include_xyz and selected_filter == "*.traj":
+    st.caption("Include XYZ が有効なため、XYZ / extxyz file も表示しています。")
+display_df = filtered_files_df[["rel_path", "suffix", "size_kb", "modified"]].copy()
+display_df["size"] = filtered_files_df["path"].map(
+    lambda value: file_size_label(Path(str(value)))
+)
 st.dataframe(
     display_df[["rel_path", "suffix", "size", "modified"]],
     hide_index=True,
     height=240,
 )
 
+file_key = f"{session_id}_chemiscope_file_{'-'.join(selected_job_ids)}"
+file_options = filtered_files_df["rel_path"].tolist()
+if st.session_state.get(file_key) not in file_options:
+    st.session_state[file_key] = file_options[0]
 selected_rel = st.selectbox(
     "Trajectory file",
-    options=files_df["rel_path"].tolist(),
-    index=0,
-    key=f"{session_id}_chemiscope_file_{'-'.join(selected_job_ids)}",
+    options=file_options,
+    key=file_key,
 )
-selected_row = files_df.loc[files_df["rel_path"] == selected_rel].iloc[0]
+selected_row = filtered_files_df.loc[filtered_files_df["rel_path"] == selected_rel].iloc[0]
 selected_path = Path(str(selected_row["path"]))
 
 try:
@@ -243,3 +285,28 @@ except ImportError as error:
 except Exception as error:
     st.error("Chemiscope failed to render this trajectory.")
     st.exception(error)
+
+if selected_path.suffix.lower() == ".traj":
+    st.markdown("#### trajectoryのダウンロード")
+    try:
+        extxyz_data = trajectory_to_extxyz(
+            str(selected_path),
+            int(selected_row["mtime_ns"]),
+            int(selected_row["size_bytes"]),
+        )
+        if extxyz_data:
+            st.download_button(
+                "選択中のtrajectoryをextxyzでダウンロード",
+                data=extxyz_data,
+                file_name=f"{selected_path.name}.xyz",
+                mime="chemical/x-xyz",
+                width="stretch",
+            )
+        else:
+            st.warning("選択したtrajectoryに出力可能なframeがありません。")
+    except ImportError as error:
+        render_dependency_hint(error)
+    except Exception as error:
+        st.error("extxyzへの変換に失敗しました。")
+        st.exception(error)
+
