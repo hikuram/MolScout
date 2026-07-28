@@ -1,7 +1,7 @@
 {
   "pyscf": {
-    "xc": "r2scan3c",
-    "ecp": "def2-SVP",
+    "xc": "r2scan-d4/vdzp",
+    "ecp": "Grimme vDZP",
     "with_df": true,
     "auxbasis": "def2-universal-jfit",
     "max_cycle": 200,
@@ -12,16 +12,13 @@
   },
 
   "pyscf_high": {
-    "xc": "wb97m_v",
-    "basis": "def2-TZVPP",
-    "ecp": "def2-TZVPP",
+    "xc": "wb97x-d4/vdzp",
+    "ecp": "Grimme vDZP",
     "with_df": true,
     "auxbasis": "def2-universal-jkfit",
-    "disp": null,
     "conv_tol": 1e-8,
     "max_cycle": 200,
     "grids_level": 6,
-    "nlcgrids_level": 4,
     "with_solvent": true,
     "solvent_model": "SMD",
     "solvent": "water",
@@ -30,8 +27,8 @@
 
   "presets": {
     "L1_fast": {
-      "xc": "b973c",
-      "ecp": "def2-SVP",
+      "xc": "b97-d3bj/vdzp",
+      "ecp": "Grimme vDZP",
       "with_df": true,
       "auxbasis": "def2-universal-jfit",
       "max_cycle": 200,
@@ -41,8 +38,8 @@
       "verbose": 4
     },
     "L2_standard": {
-      "xc": "r2scan3c",
-      "ecp": "def2-SVP",
+      "xc": "r2scan-d4/vdzp",
+      "ecp": "Grimme vDZP",
       "with_df": true,
       "auxbasis": "def2-universal-jfit",
       "max_cycle": 200,
@@ -52,16 +49,13 @@
       "verbose": 4
     },
     "L3_high": {
-      "xc": "wb97m_v",
-      "basis": "def2-TZVPP",
-      "ecp": "def2-TZVPP",
+      "xc": "wb97x-d4/vdzp",
+      "ecp": "Grimme vDZP",
       "with_df": true,
       "auxbasis": "def2-universal-jkfit",
-      "disp": null,
       "conv_tol": 1e-8,
       "max_cycle": 200,
       "grids_level": 6,
-      "nlcgrids_level": 4,
       "with_solvent": true,
       "solvent_model": "SMD",
       "solvent": "water",
