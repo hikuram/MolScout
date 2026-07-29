@@ -58,22 +58,29 @@ def _is_grimme_vdzp_basis(value: Any) -> bool:
 def _build_vdzp_ecp(atoms):
     """Build an element-specific Grimme vDZP ECP dictionary.
 
-    Grimme vDZP does not provide an ECP for every element (notably hydrogen).
-    PySCF therefore must not receive a blanket ``ecp='Grimme vDZP'`` setting.
-    Only elements for which the Basis Set Exchange entry contains ECP data are
-    added to the dictionary.
+    The orbital basis must exist for every element in the molecule.  An ECP,
+    however, is intentionally absent for elements such as hydrogen.  Missing
+    ECP data are therefore skipped, while missing orbital-basis data remain a
+    hard error.
     """
     from pyscf import gto
+    from pyscf.lib.exceptions import BasisNotFoundError
 
     ecp = {}
     for symbol in sorted(set(atoms.get_chemical_symbols())):
         try:
-            ecp_data = gto.basis.load_ecp("Grimme vDZP", symbol)
-        except Exception as exc:
+            gto.basis.load("Grimme vDZP", symbol)
+        except BasisNotFoundError as exc:
             raise RuntimeError(
-                f"Failed to load the Grimme vDZP ECP definition for {symbol}. "
-                "Check that the installed PySCF/Basis Set Exchange data support vDZP."
+                f"No Grimme vDZP orbital basis is available for {symbol}. "
+                "Check the installed Basis Set Exchange data."
             ) from exc
+
+        try:
+            ecp_data = gto.basis.load_ecp("Grimme vDZP", symbol)
+        except BasisNotFoundError:
+            # Expected for elements for which vDZP is all-electron, notably H.
+            continue
 
         if ecp_data:
             ecp[symbol] = "Grimme vDZP"
