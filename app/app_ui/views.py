@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import html
+import importlib.metadata
 import importlib.util
 import json
 import math
@@ -701,11 +702,50 @@ def maybe_run_startup_cleanup() -> None:
         run_cleanup()
 
 
+def _first_available_import(module_names: list[str]) -> tuple[str | None, str | None]:
+    errors = []
+    for module_name in module_names:
+        try:
+            if importlib.util.find_spec(module_name) is not None:
+                return module_name, None
+        except Exception as exc:
+            errors.append(f"{module_name}: {exc}")
+    return None, "\n".join(errors)
+
+
+def _first_distribution_version(distribution_names: list[str]) -> tuple[str | None, str | None]:
+    for distribution_name in distribution_names:
+        try:
+            return importlib.metadata.version(distribution_name), distribution_name
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return None, None
+
+
 def dependency_rows() -> list[dict[str, str]]:
     rows = []
-    for package, label in PACKAGE_CHECKS:
-        installed = importlib.util.find_spec(package) is not None
-        rows.append({"package": package, "label": label, "status": "ready" if installed else "missing"})
+    for check in PACKAGE_CHECKS:
+        package = str(check["package"])
+        imports = [str(name) for name in check.get("imports", [package])]
+        distributions = [str(name) for name in check.get("distributions", [package])]
+        required = bool(check.get("required", True))
+        import_name, import_error = _first_available_import(imports)
+        version, distribution_name = _first_distribution_version(distributions)
+        installed = import_name is not None
+        status = "ready" if installed else "missing"
+        if not installed and not required:
+            status = "optional"
+        rows.append(
+            {
+                "package": package,
+                "label": str(check["label"]),
+                "status": status,
+                "version": version or "-",
+                "import": import_name or ", ".join(imports),
+                "distribution": distribution_name or ", ".join(distributions),
+                "note": import_error or "",
+            }
+        )
     return rows
 
 
