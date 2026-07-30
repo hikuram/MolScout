@@ -53,14 +53,85 @@ DEFAULT_ORBMOL_VERSION = str(_load_core_default("ORBMOL_VERSION", "v2"))
 DEFAULT_ALPB_SOLVENT = str(_load_core_default("ALPB_SOLVENT", "water"))
 DEFAULT_TBLITE_ACCURACY = float(_load_core_default("TBLITE_ACCURACY", 0.02))
 PACKAGE_CHECKS = [
-    ("ase", "core geometry / trajectory handling"),
-    ("streamlit", "GUI runtime"),
-    ("pydmf", "DMF initial path search"),
-    ("sella", "TS optimization / IRC"),
-    ("orb_models", "OrbMol backend"),
-    ("pyscf", "PySCF backend"),
-    ("tblite", "xTB / ALPB backend"),
-    ("cupy", "一部 setup での GPU acceleration"),
+    {
+        "package": "ase",
+        "imports": ["ase"],
+        "distributions": ["ase"],
+        "label": "core geometry / trajectory handling",
+    },
+    {
+        "package": "streamlit",
+        "imports": ["streamlit"],
+        "distributions": ["streamlit"],
+        "label": "GUI runtime",
+    },
+    {
+        "package": "pydmf",
+        "imports": ["dmf"],
+        "distributions": ["pydmf"],
+        "label": "DMF initial path search",
+    },
+    {
+        "package": "sella",
+        "imports": ["sella"],
+        "distributions": ["sella"],
+        "label": "TS optimization / IRC",
+    },
+    {
+        "package": "orb-models",
+        "imports": ["orb_models"],
+        "distributions": ["orb-models"],
+        "label": "OrbMol backend",
+    },
+    {
+        "package": "pyscf",
+        "imports": ["pyscf"],
+        "distributions": ["pyscf"],
+        "label": "PySCF backend",
+    },
+    {
+        "package": "tblite",
+        "imports": ["tblite"],
+        "distributions": ["tblite"],
+        "label": "xTB / ALPB backend",
+    },
+    {
+        "package": "torch",
+        "imports": ["torch"],
+        "distributions": ["torch"],
+        "label": "OrbMol / Skala CUDA memory handling",
+    },
+    {
+        "package": "gpu4pyscf",
+        "imports": ["gpu4pyscf"],
+        "distributions": ["gpu4pyscf", "gpu4pyscf-cuda12x", "gpu4pyscf-cuda13x"],
+        "label": "GPU acceleration for PySCF backends",
+    },
+    {
+        "package": "cupy",
+        "imports": ["cupy"],
+        "distributions": ["cupy", "cupy-cuda12x", "cupy-cuda13x"],
+        "label": "GPU array runtime / memory pool control",
+    },
+    {
+        "package": "cupytensor",
+        "imports": ["cupytensor", "cutensor", "cupy.cuda.cutensor"],
+        "distributions": ["cupytensor", "cutensor", "cutensor-cu12", "cutensor-cu13"],
+        "label": "cuTENSOR bindings used by CuPy/GPU backends",
+    },
+    {
+        "package": "libxc",
+        "imports": ["pyscf.dft.libxc", "pylibxc"],
+        "distributions": ["pylibxc", "libxc"],
+        "label": "exchange-correlation functional support",
+    },
+    {
+        "package": "skala",
+        "imports": ["skala"],
+        "distributions": ["skala"],
+        "label": "optional Skala functional backend",
+        "required": False,
+    },
 ]
 SAMPLE_INPUT_ROOT = CORE_DIR / "sample_input"
 RESULT_CANDIDATES = [
