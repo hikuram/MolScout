@@ -150,7 +150,8 @@ def run_initial_path_search():
 
     # --- HYBRID MODE INTERCEPTION (Start) ---
     original_tblite_method = getattr(g, 'TBLITE_METHOD', 'GFN2-xTB')
-    if original_tblite_method == "hybrid":
+    alpb_mode_active = "alpb" in str(getattr(g, 'CALC_TYPE', '')).lower()
+    if alpb_mode_active and original_tblite_method == "hybrid":
         g.TBLITE_METHOD = "GFN1-xTB"
         log("Info", "Hybrid mode active: Temporarily downgrading TBLITE_METHOD to GFN1-xTB for initial path search (Opt & Path Gen).")
     # ----------------------------------------
@@ -205,7 +206,7 @@ def run_initial_path_search():
         
     finally:
         # --- HYBRID MODE INTERCEPTION (End) ---
-        if original_tblite_method == "hybrid":
+        if alpb_mode_active and original_tblite_method == "hybrid":
             g.TBLITE_METHOD = "hybrid"
             log("Info", "Initial path search complete: Restored TBLITE_METHOD to hybrid (GFN2-xTB).")
         # --------------------------------------
