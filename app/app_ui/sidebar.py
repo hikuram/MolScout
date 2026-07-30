@@ -106,10 +106,28 @@ def open_create_session_dialog() -> None:
 
 @st.dialog("環境チェック")
 def open_dependency_dialog() -> None:
-    for row in dependency_rows():
-        color = "green" if row["status"] == "ready" else "orange"
-        st.markdown(f"- `{row['package']}` :{color}[{row['status']}]")
-        st.caption(row["label"])
+    rows = dependency_rows()
+    st.dataframe(
+        [
+            {
+                "package": row["package"],
+                "status": row["status"],
+                "version": row["version"],
+                "import": row["import"],
+                "purpose": row["label"],
+            }
+            for row in rows
+        ],
+        hide_index=True,
+        width="stretch",
+    )
+    optional_missing = [row["package"] for row in rows if row["status"] == "optional"]
+    if optional_missing:
+        st.caption(f"任意依存: {', '.join(optional_missing)} は未導入でも、該当機能を使わなければ問題ありません。")
+    import_notes = [row["note"] for row in rows if row.get("note")]
+    if import_notes:
+        with st.expander("Import diagnostics", expanded=False):
+            st.code("\n".join(import_notes), language="text")
 
 
 @st.dialog("サンプル入力")
