@@ -3,6 +3,9 @@ FROM nvidia/cuda:13.3.1-runtime-ubuntu24.04
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PIP_BREAK_SYSTEM_PACKAGES=1
 
+ARG MOLSCOUT_REPO=https://github.com/hikuram/MolScout.git
+ARG MOLSCOUT_REF=app-ja
+
 # System libraries needed by Python wheels and cyipopt.
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
     && apt-get update \
@@ -12,6 +15,7 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
     cython3 \
     fontconfig \
     gfortran \
+    git \
     libblas-dev \
     libhdf5-dev \
     liblapack-dev \
@@ -27,8 +31,10 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
     ttf-mscorefonts-installer \
     && rm -rf /var/lib/apt/lists/*
 
+# Clean repository checkout.
+RUN git clone --depth 1 --branch "${MOLSCOUT_REF}" "${MOLSCOUT_REPO}" /opt/MolScout
+
 WORKDIR /opt/MolScout
-COPY . /opt/MolScout
 
 ENV PYTHONPATH="/opt/MolScout/core:${PYTHONPATH}"
 
@@ -44,8 +50,8 @@ RUN fc-cache -f -v \
 
 # Prefetch OrbMol v1/v2 models on CPU so image builds do not require a GPU.
 # The shared cache is made writable/readable for root and non-root container users.
-
 ENV HF_HOME=/opt/MolScout/.cache/huggingface
+
 RUN python3 - <<'PY'
 from orb_models.forcefield import pretrained
 
