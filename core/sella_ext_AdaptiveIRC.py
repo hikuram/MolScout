@@ -25,7 +25,7 @@ class AdaptiveIRC(IRC):
     """
     def __init__(self, *args, max_dx=0.12, min_dx=0.02,
                  shrink_factor=0.5, grow_factor=1.25, grow_after=4,
-                 dx_quantum=0.005, eig_tol=1e-5,
+                 dx_quantum=0.005, eig_tol=1e-3,
                  max_history=8, max_rollback=4,
                  rollback_factor=0.75, same_point_max_retries=1,
                  max_no_progress_rollbacks=1,
