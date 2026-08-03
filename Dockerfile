@@ -1,95 +1,108 @@
-FROM nvidia/cuda:13.3.1-runtime-ubuntu24.04
+FROM nvidia/cuda:13.3.1-devel-ubuntu24.04
 
-ENV DEBIAN_FRONTEND=noninteractive
-ENV PIP_BREAK_SYSTEM_PACKAGES=1
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_BREAK_SYSTEM_PACKAGES=1 \
+    CUDA_HOME=/usr/local/cuda \
+    PATH=/usr/local/cuda/bin:${PATH} \
+    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
+    CUPY_ACCELERATORS="cutensor,cub" \
+    TORCH_CUDA_ARCH_LIST="12.0"
 
-ARG MOLSCOUT_REPO=https://github.com/hikuram/MolScout.git
+ARG NUMPY_VERSION=2.4.6
+ARG TORCH_VERSION=2.12.1+cu132
+ARG PYTORCH_INDEX=https://download.pytorch.org/whl/cu132
+ARG GPU4PYSCF_REF=v1.8.0
+ARG TBLITE_REF=v0.6.0
 ARG MOLSCOUT_REF=app-ja
 
-# System libraries needed by Python wheels, gpu4pyscf, and cyipopt.
-RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" | debconf-set-selections \
+RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
+        | debconf-set-selections \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-    build-essential \
-    ca-certificates \
-    cython3 \
-    fontconfig \
-    gfortran \
-    git \
-    libblas-dev \
-    libhdf5-dev \
-    liblapack-dev \
-    pkg-config \
-    python3 \
-    python3-dev \
-    python3-pip \
-    python3-setuptools \
-    python3-tk \
-    python3-wheel \
-    coinor-libipopt1v5 \
-    coinor-libipopt-dev \
-    ttf-mscorefonts-installer \
+        build-essential \
+        ca-certificates \
+        curl \
+        cython3 \
+        fontconfig \
+        gfortran \
+        git \
+        libblas-dev \
+        libhdf5-dev \
+        liblapack-dev \
+        pkg-config \
+        python3 \
+        python3-dev \
+        python3-pip \
+        python3-setuptools \
+        python3-tk \
+        python3-wheel \
+        coinor-libipopt1v5 \
+        coinor-libipopt-dev \
+        ttf-mscorefonts-installer \
+        wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Clean repository checkout.
-RUN git clone --depth 1 --branch "${MOLSCOUT_REF}" "${MOLSCOUT_REPO}" /opt/MolScout
+RUN pip3 install --no-cache-dir --upgrade \
+        setuptools wheel cmake meson ninja
 
-WORKDIR /opt/MolScout
+COPY requirements.txt /tmp/requirements.txt
 
-ENV PYTHONPATH="/opt/MolScout/core:${PYTHONPATH}"
+# Install the CUDA-specific PyTorch build before the common dependencies.
+RUN pip3 install --no-cache-dir \
+        --index-url "${PYTORCH_INDEX}" \
+        "torch==${TORCH_VERSION}" \
+    && pip3 install --no-cache-dir \
+        -r /tmp/requirements.txt
 
-RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# Expose the cuTENSOR library installed by the Python wheel.
+RUN CUTENSOR_SO="$(find /usr/local/lib/python3.12/dist-packages \
+        -name 'libcutensor.so*' -print -quit)" \
+    && test -n "${CUTENSOR_SO}" \
+    && dirname "${CUTENSOR_SO}" > /etc/ld.so.conf.d/cutensor.conf \
+    && ldconfig
 
-# GPU4PySCF stack for CUDA 13.x.
-# Keep CuPy/cuTENSOR pinned because gpu4pyscf is sensitive to this pairing.
-RUN pip3 install --no-cache-dir --break-system-packages \
-    cupy-cuda13x==13.4.1 \
-    "cutensor-cu13==2.2.*" \
-    gpu4pyscf-cuda13x
+# Build GPU4PySCF for GeForce RTX 50-series Blackwell GPUs.
+RUN git clone --depth 1 --branch "${GPU4PYSCF_REF}" \
+        https://github.com/pyscf/gpu4pyscf.git /opt/gpu4pyscf \
+    && cmake -S /opt/gpu4pyscf/gpu4pyscf/lib \
+        -B /opt/gpu4pyscf/build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCUDA_ARCHITECTURES="120-real" \
+        -DBUILD_LIBXC=ON \
+    && cmake --build /opt/gpu4pyscf/build --parallel 4
 
-# Optional Skala functional backend. Enable only when using skala-* PySCF XC settings.
-# RUN pip3 install --no-cache-dir --break-system-packages skala
+# Build tblite and its Python extension for ALPB calculations.
+RUN git clone --depth 1 --branch "${TBLITE_REF}" \
+        https://github.com/tblite/tblite.git /opt/tblite \
+    && meson setup /opt/tblite/_build /opt/tblite \
+        --prefix=/usr/local -Dpython=true \
+    && meson compile -C /opt/tblite/_build \
+    && meson install -C /opt/tblite/_build \
+    && pip3 install --no-cache-dir /opt/tblite/python
 
-# Quick import check for GPU4PySCF/CuPy/cuTENSOR. This does not require a GPU.
-RUN python3 - <<'PY'
-import cupy
-import gpu4pyscf
-import importlib
+# Optional Skala exchange-correlation backend.
+# RUN pip3 install --no-cache-dir skala
 
-importlib.import_module("gpu4pyscf.lib.cutensor")
-print("GPU4PySCF/CuPy/cuTENSOR imports OK")
-cupy.show_config()
-PY
+# Optional Streamlit interface.
+RUN pip3 install --no-cache-dir streamlit "chemiscope[streamlit]"
 
-# Prepare font and plotting caches during image build.
-RUN fc-cache -f -v \
+RUN git clone --depth 1 --branch "${MOLSCOUT_REF}" \
+        https://github.com/hikuram/MolScout.git /opt/MolScout
+
+ENV PYTHONPATH="/opt/gpu4pyscf:/opt/MolScout/core:${PYTHONPATH}" \
+    HF_HOME=/opt/MolScout/.cache/huggingface
+
+# Cache fonts and OrbMol models in the image for offline execution.
+RUN fc-cache -f \
     && mkdir -p /root/.cache/matplotlib \
-    && python3 -c "import matplotlib.pyplot"
+    && python3 -c "import matplotlib.pyplot" \
+    && python3 -c "from orb_models.forcefield import pretrained; pretrained.orbmol_v2(device='cpu', precision='float64')" \
+    && python3 -c "from orb_models.forcefield import pretrained; pretrained.orbmol_v1_conservative(device='cpu', precision='float64')"
 
-# Prefetch OrbMol v1/v2 models on CPU so image builds do not require a GPU.
-ENV HF_HOME=/opt/MolScout/.cache/huggingface
-
-RUN python3 - <<'PY'
-from orb_models.forcefield import pretrained
-
-loaders = [
-    ("orbmol_v2", pretrained.orbmol_v2),
-    ("orbmol_v1_conservative", pretrained.orbmol_v1_conservative),
-]
-
-for name, loader in loaders:
-    print(f"Prefetching {name}...")
-    model, atoms_adapter = loader(device="cpu", precision="float64")
-    del model, atoms_adapter
-
-print("OrbMol model prefetch complete.")
-PY
-
-# Runtime must use the prefetched model cache instead of probing Hugging Face Hub.
-ENV HF_HUB_OFFLINE=1
-ENV TRANSFORMERS_OFFLINE=1
-ENV HF_HUB_ETAG_TIMEOUT=1
-ENV HF_HUB_DOWNLOAD_TIMEOUT=1
+ENV HF_HUB_OFFLINE=1 \
+    TRANSFORMERS_OFFLINE=1 \
+    HF_HUB_ETAG_TIMEOUT=1 \
+    HF_HUB_DOWNLOAD_TIMEOUT=1
 
 WORKDIR /workspace
 
