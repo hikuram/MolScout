@@ -1,5 +1,6 @@
 # Core scientific stack
 ase>=3.28.0
+basis-set-exchange
 matplotlib>=3.10.9
 numpy>=2.4.6
 pandas>=3.0.3
@@ -8,7 +9,8 @@ scipy>=1.17.1
 seaborn>=0.13.2
 torch>=2.12.0
 
-# Electronic structure / optimization
+# Electronic structure and optimization
+cyipopt>=1.6.1
 orb-models>=0.7.0
 pydmf>=1.2.1
 pyscf>=2.13.0
@@ -17,7 +19,3 @@ sella>=v2.4.2
 
 # Semi-empirical backend
 tblite>=0.6.0
-
-# GPU acceleration (optional, install according to the target CUDA runtime)
-# gpu4pyscf
-# cupy
