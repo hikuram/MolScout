@@ -34,8 +34,10 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
 COPY requirements.txt /tmp/requirements.txt
 
 # PyTorch and its CUDA libraries are provided by the NGC base image.
-RUN python3 -m pip install --no-cache-dir \
-        -r /tmp/requirements.txt \
+RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
+        requirements.txt > /tmp/requirements.ngc.txt \
+    && pip3 install --no-cache-dir \
+        -r /tmp/requirements.ngc.txt \
     && python3 -c \
         "import torch; print(f'torch={torch.__version__}, cuda={torch.version.cuda}')"
 
@@ -43,15 +45,6 @@ RUN python3 -m pip install --no-cache-dir \
 RUN python3 -m pip install --no-cache-dir \
         "cupy-cuda13x==13.6.0" \
         "cutensor-cu13==2.3.*"
-
-# Make the cuTENSOR wheel library available to the system linker.
-RUN SITE_PACKAGES="$(python3 -c \
-        'import site; print(site.getsitepackages()[0])')" \
-    && CUTENSOR_SO="$(find "${SITE_PACKAGES}" \
-        -name 'libcutensor.so*' -print -quit)" \
-    && test -n "${CUTENSOR_SO}" \
-    && dirname "${CUTENSOR_SO}" > /etc/ld.so.conf.d/cutensor.conf \
-    && ldconfig
 
 # Build GPU4PySCF for GeForce RTX 50-series Blackwell GPUs.
 RUN git clone --depth 1 --branch "${GPU4PYSCF_REF}" \
