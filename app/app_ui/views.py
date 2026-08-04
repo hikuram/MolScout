@@ -123,8 +123,8 @@ def format_worker_log_time(text: str) -> str:
     return ISO_TIMESTAMP_RE.sub(replace_match, text)
 
 WORKFLOW_DISPLAY_LABELS = {
-    "Lite workflow": "Lite workflow（Refine省略）",
-    "Full workflow": "Full workflow（全ステージ）",
+    "Lite workflow": "Lite workflow (no refine)",
+    "Full workflow": "Full workflow (all stages)",
     "IRC workflow only": "IRC workflow only",
     "VIB workflow only": "VIB workflow only",
     "Figure refresh only": "Figure refresh only",
@@ -401,7 +401,7 @@ def sync_workflow_dependent_state(session_id: str, preset: str) -> None:
     st.session_state[f"{session_id}_alpb_solvent"] = "None"
     st.session_state[f"{session_id}_tblite"] = "hybrid"
     st.session_state[f"{session_id}_tblite_accuracy"] = DEFAULT_TBLITE_ACCURACY
-    st.session_state[f"{session_id}_source_mode"] = "新たにアップロードする"
+    st.session_state[f"{session_id}_source_mode"] = "Upload new files"
     st.session_state[tracker_key] = preset
 
 
@@ -844,9 +844,9 @@ def find_molscout_log(files: list[Path], run_dir: Path) -> Path | None:
 
 def render_molscout_log_expander(files: list[Path], run_dir: Path) -> None:
     log_path = find_molscout_log(files, run_dir)
-    with st.expander("molscout.log を表示", expanded=False):
+    with st.expander("Show molscout.log", expanded=False):
         if log_path is None:
-            st.info("molscout.log はまだありません。")
+            st.info("molscout.log is not available yet.")
             return
         st.caption(f"log file: `{log_path.relative_to(run_dir)}`")
         st.code(tail_text(log_path, max_lines=500) or "(empty file)", language="text")
@@ -866,10 +866,10 @@ def parse_int_list(value: str) -> list[int]:
 
 def workflow_preview_badge(active: bool | None) -> tuple[str, str]:
     if active is True:
-        return "ON", "このステージは実行対象です。"
+        return "ON", "This stage will run."
     if active is False:
-        return "OFF", "このステージはスキップされます。"
-    return "BASE", "ワークフローの共通ステージです。"
+        return "OFF", "This stage will be skipped."
+    return "BASE", "This is a shared workflow stage."
 
 
 def workflow_preview_title(detail: str, outputs: str = "") -> str:
@@ -944,7 +944,7 @@ SCAN_TYPE_SPECS = {
         "unit_label": "Å",
         "default_step_size": 0.05,
         "default_end_delta": 1.0,
-        "help": "bond scan は 2 個の atom indices を指定します。例: 0,1",
+        "help": "Bond scan requires 2 atom indices. Example: 0,1",
     },
     "angle": {
         "example": "0,1,2",
@@ -953,7 +953,7 @@ SCAN_TYPE_SPECS = {
         "unit_label": "deg",
         "default_step_size": 5.0,
         "default_end_delta": 30.0,
-        "help": "angle scan は 3 個の atom indices を指定します。例: 0,1,2",
+        "help": "Angle scan requires 3 atom indices. Example: 0,1,2",
     },
     "dihedral": {
         "example": "0,1,2,3",
@@ -962,7 +962,7 @@ SCAN_TYPE_SPECS = {
         "unit_label": "deg",
         "default_step_size": 10.0,
         "default_end_delta": 360.0,
-        "help": "dihedral scan は 4 個の atom indices を指定します。例: 0,1,2,3",
+        "help": "Dihedral scan requires 4 atom indices. Example: 0,1,2,3",
     },
 }
 
@@ -978,7 +978,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": None,
         "steps": None,
-        "description": "手動で scan type、atom indices、範囲、刻みを設定します。",
+        "description": "Manually set the scan type, atom indices, range, and step spacing.",
     },
     "dihedral_twist_pm360": {
         "label": "Dihedral twist ±360 deg / 10 deg",
@@ -991,7 +991,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": 10.0,
         "steps": None,
-        "description": "4原子を指定し、現在の二面角を中心に -360 -> +360 deg を走査します。",
+        "description": "Select four atoms and scan -360 -> +360 deg around the current dihedral.",
     },
     "dihedral_twist_plus360": {
         "label": "Dihedral twist current -> +360 deg / 10 deg",
@@ -1004,7 +1004,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": 10.0,
         "steps": None,
-        "description": "配座探索・回転障壁用に、現在の二面角から +360 deg まで回します。",
+        "description": "Rotate from the current dihedral to +360 deg for conformer searches or rotational barriers.",
     },
     "dihedral_twist_minus360": {
         "label": "Dihedral twist current -> -360 deg / 10 deg",
@@ -1017,7 +1017,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": 10.0,
         "steps": None,
-        "description": "逆方向に現在の二面角から -360 deg まで回します。",
+        "description": "Rotate in the reverse direction from the current dihedral to -360 deg.",
     },
     "angle_wag_60_180": {
         "label": "Angle wag / bend 60 -> 180 deg",
@@ -1030,7 +1030,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": 180.0,
         "step_size": 5.0,
         "steps": None,
-        "description": "3原子角を 60 -> 180 deg の絶対角で平面上走査します。",
+        "description": "Scan a three-atom angle over the absolute range 60 -> 180 deg.",
     },
     "angle_wag_pm30": {
         "label": "Angle wag / bend ±30 deg / 5 deg",
@@ -1043,7 +1043,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": 5.0,
         "steps": None,
-        "description": "中心原子を軸に、現在角を中心として ±30 deg を首振りします。",
+        "description": "Wag around the central atom over +/-30 deg around the current angle.",
     },
     "bond_stretch_plus1": {
         "label": "Bond stretch current -> +1.0 Å / 0.05 Å",
@@ -1056,7 +1056,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": 0.05,
         "steps": None,
-        "description": "2原子距離を現在距離から +1.0 Å まで伸長します。",
+        "description": "Stretch a two-atom distance from the current value to +1.0 Å.",
     },
     "bond_compress_minus05": {
         "label": "Bond compression current -> -0.5 Å / 0.05 Å",
@@ -1069,7 +1069,7 @@ SCAN_PRESET_OPTIONS = {
         "end_val": None,
         "step_size": 0.05,
         "steps": None,
-        "description": "2原子距離を現在距離から -0.5 Å まで圧縮します。",
+        "description": "Compress a two-atom distance from the current value to -0.5 Å.",
     },
 }
 
@@ -1081,8 +1081,8 @@ SCAN_RANGE_MODE_OPTIONS = {
 }
 
 SCAN_STEP_MODE_OPTIONS = {
-    "steps": "分割数で指定",
-    "step_size": "刻み幅で指定",
+    "steps": "Specify by number of steps",
+    "step_size": "Specify by step size",
 }
 
 
@@ -1240,12 +1240,12 @@ def current_scan_coordinate_from_source(
         return None, None
 
     try:
-        if source_mode == "ビルトインサンプルを使う" and sample_case:
+        if source_mode == "Use built-in sample" and sample_case:
             reactant_path, _ = sample_case_files(sample_case)
             if reactant_path is None:
-                return None, "sample reactant XYZ が見つかりません。"
+                return None, "Sample reactant XYZ was not found."
             text = reactant_path.read_text(encoding="utf-8")
-        elif source_mode == "新たにアップロードする" and reactant_file is not None:
+        elif source_mode == "Upload new files" and reactant_file is not None:
             text = reactant_file.getvalue().decode("utf-8", errors="replace")
         else:
             return None, None
@@ -1272,7 +1272,7 @@ def resolve_scan_settings(module_settings: dict[str, object], current_value: flo
         end_val = float(module_settings["scan_end_val"])
     else:
         if current_value is None:
-            errors.append("relative SCAN では reactant XYZ から現在値を読める必要があります。reactant file と atom indices を確認してください。")
+            errors.append("Relative SCAN requires reading the current value from the reactant XYZ. Check the reactant file and atom indices.")
             current_value = 0.0
         start_auto = False
         start_val = current_value + float(module_settings.get("scan_start_delta", 0.0))
@@ -1282,25 +1282,25 @@ def resolve_scan_settings(module_settings: dict[str, object], current_value: flo
     if step_mode == "step_size":
         step_size = abs(float(module_settings.get("scan_step_size", 0.0)))
         if step_size <= 0:
-            errors.append("SCAN 刻み幅は 0 より大きい値にしてください。")
+            errors.append("SCAN step size must be greater than 0.")
         else:
             if start_auto and current_value is None:
-                errors.append("刻み幅指定を使う場合は、reactant XYZ から現在値を読める必要があります。")
+                errors.append("Step-size mode requires reading the current value from the reactant XYZ.")
             else:
                 effective_start = current_value if start_auto else float(start_val)
                 span = abs(float(end_val) - float(effective_start))
                 if span <= 0:
-                    errors.append("SCAN 範囲が 0 です。start と end を変えてください。")
+                    errors.append("SCAN range is zero. Change the start and end values.")
                 else:
                     steps = max(1, int(round(span / step_size)))
                     effective = span / steps
                     if abs(effective - step_size) > max(1e-6, step_size * 0.01):
-                        notes.append(f"刻み幅 {step_size:g} {spec['unit_label']} は範囲に合わせて実効 {effective:g} {spec['unit_label']} になります。")
+                        notes.append(f"Step size {step_size:g} {spec['unit_label']} is adjusted to an effective {effective:g} {spec['unit_label']}.")
 
     if scan_type == "bond" and not start_auto and (float(start_val) <= 0 or float(end_val) <= 0):
-        errors.append("bond scan の距離は 0 Å より大きい必要があります。")
+        errors.append("Bond-scan distances must be greater than 0 Å.")
     if steps < 1:
-        errors.append("SCAN steps は 1 以上にしてください。")
+        errors.append("SCAN steps must be at least 1.")
 
     resolved = {
         "scan_start_auto": start_auto,
@@ -1483,7 +1483,7 @@ def render_scan_settings(prefix: str, current_scan_value: float | None = None, c
             format_func=lambda value: SCAN_PRESET_OPTIONS[value]["label"],
             on_change=sync_scan_preset,
             args=(prefix,),
-            help="直感入力用のテンプレートです。選択後も atom indices や範囲は調整できます。",
+            help="Template for intuitive input. Atom indices and ranges can still be adjusted after selection.",
         )
         preset_description = str(SCAN_PRESET_OPTIONS[str(preset)]["description"])
         if preset_description:
@@ -1674,30 +1674,30 @@ def render_workflow_preview_dialog(
             1,
             "Load existing trajectory and result CSV",
             None,
-            "既存 trajectory と result CSV を読み込み、計算ステージは実行しません。",
+            "Load the existing trajectory and result CSV without running calculation stages.",
             "existing result.csv",
         )
         render_workflow_preview_step(
             2,
             "Regenerate profile figure",
             save_fig_on,
-            "`SAVE_FIG_ON` の設定に従って figure を再生成します。",
+            "Regenerate figures according to `SAVE_FIG_ON`.",
             "fig_result.png",
         )
         render_workflow_preview_step(
             3,
             "Finalize run",
             None,
-            "timing log と job metadata を保存して終了します。",
+            "Save the timing log and job metadata, then finish.",
             "timing.log / molscout.log",
         )
         return
 
     input_detail = {
-        "reactant_product": "reactant.xyz / product.xyz から初期経路を作成します。",
-        "single_input": "既存 trajectory または coordinate file を読み込みます。",
-        "single_input_with_result": "既存 trajectory と result CSV を読み込みます。",
-    }.get(mode, "選択した入力ファイルを読み込みます。")
+        "reactant_product": "Create an initial path from reactant.xyz and product.xyz.",
+        "single_input": "Load an existing trajectory or coordinate file.",
+        "single_input_with_result": "Load an existing trajectory and result CSV.",
+    }.get(mode, "Load the selected input files.")
 
     render_workflow_preview_step(1, "Input files", None, input_detail)
     render_workflow_preview_step(
@@ -1705,11 +1705,11 @@ def render_workflow_preview_dialog(
         "Initial path search",
         do_path,
         (
-            f"`INIT_PATH_METHOD = {init_path_method}`。"
-            f" 初期構造最適化は {'ON' if refine_input_on else 'OFF'} です。"
+            f"`INIT_PATH_METHOD = {init_path_method}`. "
+            f"Initial-structure optimization is {'ON' if refine_input_on else 'OFF'}."
         )
         if do_path
-        else "既存 trajectory / coordinate input を使うため、初期経路作成はスキップされます。",
+        else "Initial-path generation is skipped because an existing trajectory or coordinate input is used.",
         "init_path.traj / init_path.xyz" if do_path else "",
     )
     render_initial_path_method_preview(init_path_method, do_path)
@@ -1717,55 +1717,55 @@ def render_workflow_preview_dialog(
         3,
         "Evaluate single point energies",
         None,
-        "入力された経路または生成された初期経路に対して single point energy を評価します。",
+        "Evaluate single-point energies for the input path or generated initial path.",
         "result.csv",
     )
     render_workflow_preview_step(
         4,
         "Extract local maxima and endpoints",
         None,
-        "TS optimization や後続解析に使う候補点を result.csv から抽出します。",
+        "Extract candidate points for TS optimization and downstream analysis from result.csv.",
     )
     render_workflow_preview_step(
         5,
         "TS optimization",
         do_ts,
-        "`TSOPT_ON` に対応します。ON の場合は Sella による TS optimization を実行します。",
+        "Controlled by `TSOPT_ON`. When ON, run TS optimization with Sella.",
         "*_tsopt.xyz / *_tsopt.traj" if do_ts else "",
     )
     render_workflow_preview_step(
         6,
         "IRC forward and reverse",
         do_irc,
-        "`IRC_ON` に対応します。ON の場合は forward / reverse の AdaptiveIRC を実行します。",
+        "Controlled by `IRC_ON`. When ON, run forward and reverse AdaptiveIRC.",
         "*_irc0/1 / irc.traj" if do_irc else "",
     )
     render_workflow_preview_step(
         7,
         "Pick and re-optimize optpoints",
         pick_optpoints_on,
-        "`PICK_OPTPOINTS_ON` に対応します。候補点を抽出し、必要に応じて再最適化します。",
+        "Controlled by `PICK_OPTPOINTS_ON`. Extract candidate points and re-optimize them when needed.",
         "optpoints.traj / optpoints.xyz" if pick_optpoints_on else "",
     )
     render_workflow_preview_step(
         8,
         "Vibration and thermo",
         do_vib,
-        "`VIB_ON` に対応します。振動解析と熱力学補正を計算します。",
+        "Controlled by `VIB_ON`. Calculate vibrational analysis and thermochemical corrections.",
         "*_vibsummary.txt / *_vib_*.xyz" if do_vib else "",
     )
     render_workflow_preview_step(
         9,
         "High-level energy refine",
         do_refine,
-        "`REFINE_ENERGY_ON` に対応します。PySCF による高精度 single point を実行します。",
+        "Controlled by `REFINE_ENERGY_ON`. Run high-level single points with PySCF.",
         "*_refine_pyscf.json / *.molden" if do_refine else "",
     )
     render_workflow_preview_step(
         10,
         "Figure and final logs",
         save_fig_on,
-        "`SAVE_FIG_ON` に対応します。最後に profile figure と log を保存します。",
+        "Controlled by `SAVE_FIG_ON`. Save the profile figure and logs at the end.",
         "fig_result.png / timing.log / molscout.log" if save_fig_on else "timing.log / molscout.log",
     )
 
@@ -1793,14 +1793,14 @@ def render_concat_workflow_preview_dialog(
         1,
         "Input files",
         None,
-        "複数の .xyz / .traj files を指定順に読み込みます。",
+        "Load multiple .xyz / .traj files in the selected order.",
         "uploaded files / selected session files",
     )
     render_workflow_preview_step(
         2,
         "Concatenate frames",
         None,
-        "`INIT_PATH_METHOD = CAT` として、入力ファイル群を 1 つの trajectory に連結します。",
+        "Concatenate the input files into one trajectory with `INIT_PATH_METHOD = CAT`.",
         "init_path.traj / init_path.xyz",
     )
     render_initial_path_method_preview("CAT", False)
@@ -1808,41 +1808,41 @@ def render_concat_workflow_preview_dialog(
         3,
         "Evaluate single point energies",
         None,
-        "連結した全 frame に対して single point energy を評価します。",
+        "Evaluate single-point energies for all concatenated frames.",
         "result.csv",
     )
     render_workflow_preview_step(
         4,
         "Structure optimization",
         do_opt,
-        "`REFINE_INPUT_ON` に対応します。ON の場合は各 frame の structure optimization を実行します。",
+        "Controlled by `REFINE_INPUT_ON`. When ON, run structure optimization for each frame.",
     )
     render_workflow_preview_step(
         5,
         "Pick and re-optimize optpoints",
         pick_optpoints_on,
-        "`PICK_OPTPOINTS_ON` に対応します。候補点を抽出し、必要に応じて再最適化します。",
+        "Controlled by `PICK_OPTPOINTS_ON`. Extract candidate points and re-optimize them when needed.",
         "optpoints.traj / optpoints.xyz" if pick_optpoints_on else "",
     )
     render_workflow_preview_step(
         6,
         "Vibration and thermo",
         do_vib,
-        "`VIB_ON` に対応します。batch対象に対して振動解析と熱力学補正を計算します。",
+        "Controlled by `VIB_ON`. Calculate vibrational analysis and thermochemical corrections for batch targets.",
         "*_vibsummary.txt / *_vib_*.xyz" if do_vib else "",
     )
     render_workflow_preview_step(
         7,
         "High-level energy refine",
         do_refine,
-        "`REFINE_ENERGY_ON` に対応します。PySCF による高精度 single point を実行します。",
+        "Controlled by `REFINE_ENERGY_ON`. Run high-level single points with PySCF.",
         "*_refine_pyscf.json / *.molden" if do_refine else "",
     )
     render_workflow_preview_step(
         8,
         "Figure and final logs",
         save_fig_on,
-        "`SAVE_FIG_ON` に対応します。最後に profile figure と log を保存します。",
+        "Controlled by `SAVE_FIG_ON`. Save the profile figure and logs at the end.",
         "fig_result.png / timing.log / molscout.log" if save_fig_on else "timing.log / molscout.log",
     )
 
@@ -1856,7 +1856,7 @@ def render_module_settings(
 ) -> dict:
     values: dict[str, object] = {}
     with st.expander("Detailed Module Settings", expanded=False):
-        st.caption("このジョブのみに適用する `core/default_config.py` 相当のモジュール設定です。")
+        st.caption("Module settings equivalent to `core/default_config.py`, applied only to this job.")
 
         if include_initial_path_method:
             values.update(collect_initial_path_settings(prefix))
@@ -1889,7 +1889,7 @@ def render_module_settings(
         refine_calc_key = f"{prefix}_refine_calc_type"
         refine_calc_options = ["pyscf_high", "pyscf"]
         values["use_sella_in_opt"] = opt_cols[0].checkbox(
-            "optimization で Sella を使用",
+            "Use Sella for optimization",
             key=use_sella_key,
             **widget_default_kwargs(use_sella_key, value=False),
         )
@@ -1961,14 +1961,14 @@ def render_module_settings(
             **widget_default_kwargs(irc_dx_min_key, value=0.02),
         )
         values["opt_optpoints_again_on"] = tail_cols[1].checkbox(
-            "optpoints を再び構造最適化",
+            "Re-optimize optpoints",
             key=optpoints_again_key,
             **widget_default_kwargs(optpoints_again_key, value=False),
         )
         values["fixed_atoms_text"] = st.text_input(
             "Fixed atoms",
             key=fixed_atoms_key,
-            help="comma 区切りの atom indices。例: 0,1,2",
+            help="Comma-separated atom indices. Example: 0,1,2",
             **widget_default_kwargs(fixed_atoms_key, value=""),
         )
         
@@ -2198,7 +2198,7 @@ def sidebar_monitor_fragment() -> None:
         if gpu_rows:
             st.dataframe(pd.DataFrame(gpu_rows), hide_index=True, height=180)
         else:
-            st.caption("この環境では GPU metrics は検出されませんでした。")
+            st.caption("No GPU metrics were detected in this environment.")
 
     with st.expander("Worker log", expanded=False):
         log_text = tail_text(WORKER_LOG_FILE, max_lines=80) or "No worker log yet."
@@ -2210,7 +2210,7 @@ def render_queue_panel() -> None:
     cols = st.columns([1, 1])
     cols[0].markdown("## :material/lan: Shared queue")
     with cols[1]:
-        if st.button(":material/refresh: 表示を更新", width="stretch"):
+        if st.button(":material/refresh: Refresh view", width="stretch"):
             st.rerun()
 
     state = sync_queue_state()
@@ -2231,7 +2231,7 @@ def render_queue_panel() -> None:
     if jobs:
         st.dataframe(pd.DataFrame(jobs), hide_index=True, height=240)
     else:
-        st.info("現在キューにジョブはありません。")
+        st.info("No jobs are currently in the queue.")
 
 
 def refresh_jobs(session_id: str, jobs: list[dict], *, only_job_id: str | None = None) -> dict[str, dict]:
@@ -2286,7 +2286,7 @@ def render_job_detail(session_id: str, job: dict, jobs: list[dict], index: int) 
     meta[4].metric("Exit code", "-" if job.get("exit_code") is None else str(job["exit_code"]))
     if job.get("completion_reason") or job.get("status_message"):
         st.caption(
-            f"結果: {job.get('completion_reason') or '-'}"
+            f"Result: {job.get('completion_reason') or '-'}"
             + (f" | {job['status_message']}" if job.get("status_message") else "")
         )
 
@@ -2326,33 +2326,33 @@ def render_job_detail(session_id: str, job: dict, jobs: list[dict], index: int) 
 
     action_shell = st.columns([1, 4], vertical_alignment="center")
     with action_shell[1]:
-        st.caption("ジョブの操作")
+        st.caption("Job actions")
         action_cols = st.columns([1, 1, 1, 1, 2])
-    if action_cols[0].button(":material/arrow_upward: 上へ", key=f"up_{job['job_id']}", disabled=index == 0 or job["status"] != "queued"):
+    if action_cols[0].button(":material/arrow_upward: Move up", key=f"up_{job['job_id']}", disabled=index == 0 or job["status"] != "queued"):
         order = [item["job_id"] for item in jobs]
         order[index - 1], order[index] = order[index], order[index - 1]
         reorder_queue_for_session(session_id, order)
         st.rerun()
-    if action_cols[1].button(":material/arrow_downward: 下へ", key=f"down_{job['job_id']}", disabled=index == len(jobs) - 1 or job["status"] != "queued"):
+    if action_cols[1].button(":material/arrow_downward: Move down", key=f"down_{job['job_id']}", disabled=index == len(jobs) - 1 or job["status"] != "queued"):
         order = [item["job_id"] for item in jobs]
         order[index + 1], order[index] = order[index], order[index + 1]
         reorder_queue_for_session(session_id, order)
         st.rerun()
-    if action_cols[2].button(":material/stop_circle: 停止", key=f"stop_{job['job_id']}", disabled=job["status"] != "running"):
+    if action_cols[2].button(":material/stop_circle: Stop", key=f"stop_{job['job_id']}", disabled=job["status"] != "running"):
         stop_result = stop_job(job)
         if stop_result == "signaled":
-            st.warning("停止シグナルを送信しました。キューは停止確認後に次のジョブへ進みます。")
+            st.warning("Stop signal sent. The queue will advance after stop confirmation.")
         else:
-            st.info("このジョブは実行中ではありません。表示を更新します。")
+            st.info("This job is not running. Refreshing the view.")
         st.rerun()
-    if action_cols[3].button(":material/delete: 削除", key=f"delete_{job['job_id']}", disabled=job["status"] == "running"):
+    if action_cols[3].button(":material/delete: Delete", key=f"delete_{job['job_id']}", disabled=job["status"] == "running"):
         delete_result = delete_job_from_queue(session_id, job["job_id"])
         if delete_result == "deleted":
-            st.warning("ジョブを削除しました。")
+            st.warning("Job deleted.")
         elif delete_result == "deferred":
-            st.info("削除を要求しました。ジョブは安全停止後に自動で削除されます。")
+            st.info("Delete requested. The job will be removed automatically after a safe stop.")
         else:
-            st.info("このジョブは既に存在しません。")
+            st.info("This job no longer exists.")
         st.rerun()
 
     with action_cols[4]:
@@ -2360,7 +2360,7 @@ def render_job_detail(session_id: str, job: dict, jobs: list[dict], index: int) 
         flat_job_zip = zip_cols[0].checkbox("flat", key=f"flat_zip_{job['job_id']}")
         archive_path = build_job_archive(session_id, job["job_id"], flat=flat_job_zip)
         zip_cols[1].download_button(
-            ":material/folder_zip: ジョブZIP",
+            ":material/folder_zip: Job ZIP",
             archive_path.read_bytes(),
             file_name=archive_path.name,
             mime="application/zip",
@@ -2386,7 +2386,7 @@ def render_session_overview(session: dict) -> None:
 
     zip_path = build_session_archive(session["session_id"])
     st.download_button(
-        ":material/folder_zip: session ZIP をダウンロード",
+        ":material/folder_zip: Download session ZIP",
         zip_path.read_bytes(),
         file_name=zip_path.name,
         mime="application/zip",
@@ -2432,12 +2432,12 @@ def render_pyscf_profile_editor(label: str, profile: dict, *, prefix: str) -> di
         cols[1].caption("conv_tol: default")
 
     level_shift_default = profile.get("scf_level_shift")
-    level_shift_enabled = cols[2].checkbox("レベルシフトを使う", value=level_shift_default is not None, key=f"{prefix}_scf_level_shift_enabled")
+    level_shift_enabled = cols[2].checkbox("Use level shift", value=level_shift_default is not None, key=f"{prefix}_scf_level_shift_enabled")
     profile["scf_level_shift"] = None
     if level_shift_enabled:
-        profile["scf_level_shift"] = float(cols[3].number_input("レベルシフト値", min_value=0.0, value=float(number_default(level_shift_default, 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
+        profile["scf_level_shift"] = float(cols[3].number_input("Level-shift value", min_value=0.0, value=float(number_default(level_shift_default, 0.1)), step=0.1, format="%.6g", key=f"{prefix}_scf_level_shift"))
     else:
-        cols[3].caption("レベルシフト: none")
+        cols[3].caption("Level shift: none")
 
     cols = st.columns(4)
     disp_default = profile.get("disp")
@@ -2505,7 +2505,7 @@ PYSCF_BASIS_CANDIDATES = [
 ]
 
 
-@st.dialog("XC / Basis 候補")
+@st.dialog("XC / basis candidates")
 def render_pyscf_candidate_dialog() -> None:
     cols = st.columns(2)
     with cols[0]:
@@ -2640,7 +2640,7 @@ def render_pyscf_copy_controls(session_id: str, config: dict, presets: dict) -> 
     for index, (target_name, target_prefix) in enumerate(targets):
         source_options = [key for key in labels if key != f"profile:{target_name}"]
         selected_source = cols[index].selectbox(
-            f"{target_name} へ設定をコピー from",
+            f"{target_name}  from",
             source_options,
             format_func=lambda value: labels[value],
             key=f"{session_id}_{target_name}_copy_source",
@@ -2648,14 +2648,14 @@ def render_pyscf_copy_controls(session_id: str, config: dict, presets: dict) -> 
         if cols[index].button(":material/content_copy: copy", key=f"{session_id}_{target_name}_copy_button", width="stretch"):
             source_profile = presets[selected_source.removeprefix("preset:")] if selected_source.startswith("preset:") else profiles[selected_source]
             queue_pyscf_profile_copy(target_prefix, source_profile)
-            st.success(f"{labels[selected_source]} を {target_name} に反映しました。保存するには config を保存してください。")
+            st.success(f"{labels[selected_source]} to {target_name}. Save the config to persist the change.")
             st.rerun()
-    cols[2].caption("copy は画面上の編集値だけを更新します。永続化は保存ボタンで行います。")
+    cols[2].caption("Copy only updates the values shown on this screen. Use the save button to persist them.")
 
 
 def render_session_config(session: dict) -> None:
     st.markdown("## :material/settings: Session config")
-    st.caption("PySCFの設定はこのセッションのメタデータに保存されます。これらの値から ジョブローカルのJSONが生成されます。")
+    st.caption("PySCF settings are stored in this session metadata. Job-local JSON files are generated from these values.")
 
     state_version_key = f"{session['session_id']}_pyscf_config_state_version"
     if st.session_state.get(state_version_key) != 3:
@@ -2666,7 +2666,7 @@ def render_session_config(session: dict) -> None:
     config = json.loads(json.dumps(session.get("pyscf_config", default_pyscf_config())))
     presets = dict(config.get("presets", {}))
     with st.container(border=True):
-        if st.button(":material/help: XC / Basis 候補", key=f"{session['session_id']}_pyscf_candidates_help"):
+        if st.button(":material/help: XC / basis candidates", key=f"{session['session_id']}_pyscf_candidates_help"):
             render_pyscf_candidate_dialog()
         if presets:
             st.divider()
@@ -2684,15 +2684,15 @@ def render_session_config(session: dict) -> None:
             st.code(json.dumps(config, ensure_ascii=False, indent=2), language="json")
 
         actions = st.columns(3)
-        save_pressed = actions[0].button(":material/save: config を保存", type="primary", width="stretch")
-        reset_pressed = actions[1].button(":material/restart_alt: デフォルトに戻す", width="stretch")
-        reload_pressed = actions[2].button(":material/refresh: session values を再読込", width="stretch")
+        save_pressed = actions[0].button(":material/save: Save config", type="primary", width="stretch")
+        reset_pressed = actions[1].button(":material/restart_alt: Restore defaults", width="stretch")
+        reload_pressed = actions[2].button(":material/refresh: Reload session values", width="stretch")
 
     if save_pressed:
         updated = dict(session)
         updated["pyscf_config"] = config
         save_session(updated)
-        st.success("session PySCF settings を保存しました。")
+        st.success("Session PySCF settings saved.")
         st.rerun()
     if reset_pressed:
         updated = dict(session)
@@ -2700,7 +2700,7 @@ def render_session_config(session: dict) -> None:
         save_session(updated)
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf")
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf_high")
-        st.success("このセッションの PySCF settings をデフォルトに戻しました。")
+        st.success("PySCF settings for this session were restored to defaults.")
         st.rerun()
     if reload_pressed:
         clear_pyscf_profile_state(f"{session['session_id']}_pyscf")
@@ -2729,9 +2729,9 @@ def render_job_submission(session: dict) -> None:
 
     st.markdown("## :material/add_circle: New Path Search")
     if path_reset_applied:
-        st.success("セッションのデフォルト設定に戻しました。")
+        st.success("Restored the session default settings.")
     
-    st.markdown("#### ワークフローとインプット（ソース）の設定")
+    st.markdown("#### Workflow and input source settings")
     selector_cols = st.columns([1, 1.2])
     workflow_key = f"{session_id}_preset"
     source_key = f"{session_id}_source_mode"
@@ -2742,11 +2742,11 @@ def render_job_submission(session: dict) -> None:
         
     mode = WORKFLOW_LABELS[preset]["input_mode"]
     sync_workflow_dependent_state(session_id, preset)
-    source_options = ["新たにアップロードする"]
+    source_options = ["Upload new files"]
     if mode == "reactant_product" and sample_cases:
-        source_options.append("ビルトインサンプルを使う")
+        source_options.append("Use built-in sample")
     elif mode != "reactant_product" and existing_inputs:
-        source_options.append("既存のセッション内ファイルを使う")
+        source_options.append("Use existing session file")
         
     current_source = st.session_state.get(source_key)
     if current_source not in source_options:
@@ -2767,7 +2767,7 @@ def render_job_submission(session: dict) -> None:
     path_prefix = f"{session_id}_path"
     refine_input_key = f"{session_id}_refine_input_on"
 
-    if source_mode != "新たにアップロードする":
+    if source_mode != "Upload new files":
         st.markdown("**1. Input files (Select existing)**")
         with st.container(border=True):
             if mode == "reactant_product":
@@ -2836,28 +2836,28 @@ def render_job_submission(session: dict) -> None:
             elif mode == "single_input":
                 labels = [f"{path.relative_to(session_dir(session_id))} ({file_size_label(path)})" for path in existing_inputs]
                 if labels:
-                    existing_choice = st.selectbox("既存のセッション内ファイルを使う", labels, key=f"{session_id}_existing")
+                    existing_choice = st.selectbox("Use existing session file", labels, key=f"{session_id}_existing")
                     existing_input = existing_inputs[labels.index(existing_choice)]
                 else:
-                    st.caption("このセッションには既存の `.traj` または `.xyz` file がまだありません。")
+                    st.caption("This session does not have any existing `.traj` or `.xyz` files yet.")
 
             else:
-                st.caption("figure refresh には trajectory file と再描画対象の CSV の両方が必要です。")
+                st.caption("Figure refresh requires both a trajectory file and the CSV to redraw.")
                 cols = st.columns(2)
                 input_labels = [f"{path.relative_to(session_dir(session_id))} ({file_size_label(path)})" for path in existing_inputs]
                 result_labels = [f"{path.relative_to(session_dir(session_id))} ({file_size_label(path)})" for path in existing_result_files]
                 if input_labels:
-                    existing_input_choice = cols[0].selectbox("既存 trajectory / XYZ", input_labels, key=f"{session_id}_fig_existing_input")
+                    existing_input_choice = cols[0].selectbox("Existing trajectory / XYZ", input_labels, key=f"{session_id}_fig_existing_input")
                     existing_input = existing_inputs[input_labels.index(existing_input_choice)]
                 else:
-                    cols[0].caption("このセッションには既存の `.traj` または `.xyz` file がまだありません。")
+                    cols[0].caption("This session does not have any existing `.traj` or `.xyz` files yet.")
                 if result_labels:
-                    existing_result_choice = cols[1].selectbox("既存 result CSV", result_labels, key=f"{session_id}_fig_existing_csv")
+                    existing_result_choice = cols[1].selectbox("Existing result CSV", result_labels, key=f"{session_id}_fig_existing_csv")
                     existing_result = existing_result_files[result_labels.index(existing_result_choice)]
                 else:
-                    cols[1].caption("このセッションには既存の `.csv` file がまだありません。")
+                    cols[1].caption("This session does not have any existing `.csv` files yet.")
 
-    if source_mode == "新たにアップロードする":
+    if source_mode == "Upload new files":
         st.markdown("**1. Input files (Upload)**")
         with st.container(border=True):
             if mode == "reactant_product":
@@ -2866,12 +2866,12 @@ def render_job_submission(session: dict) -> None:
                 reactant_file = cols[0].file_uploader("Reactant XYZ (Initial XYZ)", type=["xyz"], key=f"{session_id}_reactant")
                 product_file = cols[1].file_uploader("Product XYZ", type=["xyz"], key=f"{session_id}_product", disabled=is_scan)
             elif mode == "single_input":
-                input_file = st.file_uploader("Input `.traj` または `.xyz`", type=["traj", "xyz"], key=f"{session_id}_input")
+                input_file = st.file_uploader("Input `.traj` or `.xyz`", type=["traj", "xyz"], key=f"{session_id}_input")
             else:
-                st.caption("figure refresh には trajectory file と再描画対象の CSV の両方が必要です。")
+                st.caption("Figure refresh requires both a trajectory file and the CSV to redraw.")
                 cols = st.columns(2)
-                input_file = cols[0].file_uploader("Input `.traj` または `.xyz`", type=["traj", "xyz"], key=f"{session_id}_fig_input")
-                result_file = cols[1].file_uploader("既存 result CSV", type=["csv"], key=f"{session_id}_fig_csv")
+                input_file = cols[0].file_uploader("Input `.traj` or `.xyz`", type=["traj", "xyz"], key=f"{session_id}_fig_input")
+                result_file = cols[1].file_uploader("Existing result CSV", type=["csv"], key=f"{session_id}_fig_csv")
 
     st.markdown("**2. Method Settings**")
     with st.container(border=True):
@@ -2887,7 +2887,7 @@ def render_job_submission(session: dict) -> None:
             try:
                 preview_scan_indices = parse_int_list(str(st.session_state.get(f"{path_prefix}_scan_indices_text", "0,1")))
             except ValueError:
-                preview_scan_error = "SCAN indices を整数 list として読めません。"
+                preview_scan_error = "SCAN indices could not be read as an integer list."
         preview_scan_value, source_scan_error = current_scan_coordinate_from_source(
             source_mode=str(source_mode),
             mode=str(mode),
@@ -2909,7 +2909,7 @@ def render_job_submission(session: dict) -> None:
         st.markdown("**3. Workflow Steps**")
         if preset == "Figure refresh only":
             do_path = do_ts = do_irc = do_vib = do_refine = False
-            st.info("figure refresh は既存 trajectory と CSV からプロットの再描画だけを行います。calculation stage は実行しません。", icon=":material/info:")
+            st.info("Figure refresh only redraws plots from an existing trajectory and CSV. Calculation stages are not run.", icon=":material/info:")
         else:
             step_cols = st.columns(5)
 
@@ -2980,29 +2980,29 @@ def render_job_submission(session: dict) -> None:
         if not refine_input_applicable:
             st.session_state[refine_input_key] = False
         refine_input_on = extra_cols[0].checkbox(
-            "初期構造の最適化",
+            "Optimize initial structures",
             key=refine_input_key,
             disabled=not refine_input_applicable,
         )
         pick_optpoints_key = f"{session_id}_pick_optpoints"
         save_fig_key = f"{session_id}_savefig"
         pick_optpoints_on = extra_cols[1].checkbox(
-            "構造最適化点（optpoints）を抽出",
+            "Extract optimized points (optpoints)",
             key=pick_optpoints_key,
             **widget_default_kwargs(pick_optpoints_key, value=True),
         )
         save_fig_on = extra_cols[2].checkbox(
-            "図を保存",
+            "Save figures",
             key=save_fig_key,
             **widget_default_kwargs(save_fig_key, value=True),
         )
 
         st.space("small")
         with st.container(horizontal=True, horizontal_alignment="right"):
-            reset_defaults_pressed = st.form_submit_button("リセット", icon=":material/restart_alt:")
-            save_defaults_pressed = st.form_submit_button("セッションのデフォルトにする", icon=":material/save:")
-            preview_pressed = st.form_submit_button("ワークフロー構造をプレビュー", icon=":material/account_tree:")
-            submitted = st.form_submit_button("ジョブをキューに追加", type="primary", icon=":material/queue:")
+            reset_defaults_pressed = st.form_submit_button("Reset", icon=":material/restart_alt:")
+            save_defaults_pressed = st.form_submit_button("Set as session default", icon=":material/save:")
+            preview_pressed = st.form_submit_button("Preview workflow structure", icon=":material/account_tree:")
+            submitted = st.form_submit_button("Add job to queue", type="primary", icon=":material/queue:")
 
     if reset_defaults_pressed:
         st.session_state[submit_reset_pending_key(session_id, PATH_SUBMIT_SECTION)] = True
@@ -3031,7 +3031,7 @@ def render_job_submission(session: dict) -> None:
                 "save_fig_on": bool(save_fig_on),
             },
         )
-        st.success("この設定をセッションのデフォルトとして保存しました。")
+        st.success("Saved these settings as the session defaults.")
         st.rerun()
 
     if preview_pressed:
@@ -3056,22 +3056,22 @@ def render_job_submission(session: dict) -> None:
 
     errors: list[str] = []
     if not method:
-        errors.append("Method は必須です。")
+        errors.append("Method is required.")
     if not result_name.endswith(".csv"):
-        errors.append("result CSV name は `.csv` で終わる必要があります。")
+        errors.append("Result CSV name must end with `.csv`.")
     effective_method = "orbmol+alpb" if method == "orbmol" and alpb_solvent != "None" else method
     if alpb_solvent != "None" and method != "orbmol":
         errors.append("Add ALPB solvent is only available when Method is 'orbmol'. Select 'None' or choose 'orbmol'.")
     try:
         scan_indices = parse_int_list(str(module_settings["scan_indices_text"]))
     except ValueError:
-        errors.append("SCAN indices は comma 区切りの整数 list で指定してください。")
+        errors.append("Specify SCAN indices as a comma-separated list of integers.")
         scan_indices = []
     if module_settings["init_path_method"] == "SCAN" and scan_indices:
         scan_spec = scan_type_spec(str(module_settings["scan_type"]))
         expected_count = int(scan_spec["count"])
         if len(scan_indices) != expected_count:
-            errors.append(f"{module_settings['scan_type']} SCAN では atom indices を {expected_count} 個指定してください。")
+            errors.append(f"{module_settings['scan_type']} SCAN requires {expected_count} atom indices.")
     current_scan_value, current_scan_error = current_scan_coordinate_from_source(
         source_mode=str(source_mode),
         mode=str(mode),
@@ -3083,44 +3083,44 @@ def render_job_submission(session: dict) -> None:
     resolved_scan_settings, scan_resolution_errors, scan_resolution_notes = resolve_scan_settings(module_settings, current_scan_value)
     if module_settings["init_path_method"] == "SCAN":
         if current_scan_error and str(module_settings.get("scan_range_mode")) in {"relative_forward", "relative_window"}:
-            errors.append(f"SCAN current value を読めません: {current_scan_error}")
+            errors.append(f"Could not read the current SCAN value: {current_scan_error}")
         errors.extend(scan_resolution_errors)
     try:
         fixed_atoms = parse_int_list(str(module_settings["fixed_atoms_text"]))
     except ValueError:
-        errors.append("Fixed atoms は comma 区切りの整数 list で指定してください。")
+        errors.append("Specify fixed atoms as a comma-separated list of integers.")
         fixed_atoms = []
     if not any([do_path, do_ts, do_irc, do_vib, do_refine]) and preset != "Figure refresh only":
-        errors.append("少なくとも 1 つの workflow step を選択してください。")
+        errors.append("Select at least one workflow step.")
     is_scan = module_settings["init_path_method"] == "SCAN"
     if mode == "reactant_product":
         if not do_path:
-            errors.append("reactant / product workflow では Initial Path を有効にしてください。")
-        if source_mode == "新たにアップロードする":
+            errors.append("Enable Initial Path for reactant/product workflows.")
+        if source_mode == "Upload new files":
             if reactant_file is None:
-                errors.append("Reactant file (Initial XYZ) は必須です。")
+                errors.append("Reactant file (Initial XYZ) is required.")
             elif product_file is None and not is_scan:
-                errors.append("Product file のアップロードが必要です（SCANモード以外）。")
+                errors.append("Product file upload is required except in SCAN mode.")
         else:
             reactant_path, product_path = sample_case_files(sample_case or "")
             if reactant_path is None or (product_path is None and not is_scan):
-                errors.append("選択した sample case が不完全です。")
+                errors.append("The selected sample case is incomplete.")
     elif mode == "single_input":
-        if source_mode == "新たにアップロードする" and input_file is None:
-            errors.append("input trajectory または XYZ file が必要です。")
-        if source_mode == "既存のセッション内ファイルを使う" and existing_input is None:
-            errors.append("このセッションから既存の `.traj` または `.xyz` file を選択してください。")
+        if source_mode == "Upload new files" and input_file is None:
+            errors.append("An input trajectory or XYZ file is required.")
+        if source_mode == "Use existing session file" and existing_input is None:
+            errors.append("Select an existing `.traj` or `.xyz` file from this session.")
     else:
-        if source_mode == "新たにアップロードする":
+        if source_mode == "Upload new files":
             if input_file is None:
-                errors.append("input trajectory または XYZ file が必要です。")
+                errors.append("An input trajectory or XYZ file is required.")
             if result_file is None:
-                errors.append("figure refresh には既存 result CSV が必要です。")
+                errors.append("Figure refresh requires an existing result CSV.")
         else:
             if existing_input is None:
-                errors.append("このセッションから既存の `.traj` または `.xyz` file を選択してください。")
+                errors.append("Select an existing `.traj` or `.xyz` file from this session.")
             if existing_result is None:
-                errors.append("このセッションから既存の `.csv` file を選択してください。")
+                errors.append("Select an existing `.csv` file from this session.")
 
     if errors:
         for message in errors:
@@ -3189,7 +3189,7 @@ def render_job_submission(session: dict) -> None:
     reactant_path = product_path = input_path = result_path = None
     manifest_inputs: list[dict[str, str]] = []
     if mode == "reactant_product":
-        if source_mode == "新たにアップロードする":
+        if source_mode == "Upload new files":
             reactant_path = write_uploaded_file(reactant_file, input_root, reactant_file.name or "reactant.xyz")
             manifest_inputs.append(manifest_input(
                 role="reactant",
@@ -3227,7 +3227,7 @@ def render_job_submission(session: dict) -> None:
         if product_path:
             job["inputs"].append(str(product_path))
     elif mode == "single_input":
-        if source_mode == "新たにアップロードする":
+        if source_mode == "Upload new files":
             input_path = write_uploaded_file(input_file, input_root, input_file.name or "input.traj")
             original_input_name = input_file.name or "input.traj"
         else:
@@ -3241,7 +3241,7 @@ def render_job_submission(session: dict) -> None:
         ))
         job["inputs"] = [str(input_path)]
     else:
-        if source_mode == "新たにアップロードする":
+        if source_mode == "Upload new files":
             input_path = write_uploaded_file(input_file, input_root, input_file.name or "input.traj")
             result_path = write_uploaded_file(result_file, output_dir, result_name)
             original_input_name = input_file.name or "input.traj"
@@ -3286,7 +3286,7 @@ def render_job_submission(session: dict) -> None:
     save_job(job)
     enqueue_job(job)
     ensure_worker_running()
-    st.success(f"ジョブ `{job['job_id']}` をキューに追加しました。")
+    st.success(f"Job `{job['job_id']}` added to the queue.")
 
 
 def render_concat_submission(session: dict) -> None:
@@ -3305,14 +3305,14 @@ def render_concat_submission(session: dict) -> None:
 
     st.markdown("## :material/library_add: New Concatenation")
     if concat_reset_applied:
-        st.success("セッションのデフォルト設定に戻しました。")
-    st.caption("複数の `.xyz` または `.traj` files を 1 つの trajectory に連結し、必要に応じて全 frame に対する batch processing (optimization, vibrational analysis, energy refinement) を順次実行します。")
+        st.success("Restored the session default settings.")
+    st.caption("Concatenate multiple `.xyz` or `.traj` files into one trajectory and, if needed, run batch processing for all frames (optimization, vibrational analysis, energy refinement).")
 
-    st.markdown("#### インプット（ソース）の設定")
+    st.markdown("#### Input source settings")
     source_key = f"{session_id}_cat_source_mode"
-    source_options = ["ファイルをアップロード"]
+    source_options = ["Upload files"]
     if existing_inputs:
-        source_options.append("既存のセッション内ファイルを選択")
+        source_options.append("Select existing session files")
 
     current_source = st.session_state.get(source_key)
     if current_source not in source_options:
@@ -3331,16 +3331,16 @@ def render_concat_submission(session: dict) -> None:
         uploaded_files = None
         selected_existing = []
 
-        if source_mode == "ファイルをアップロード":
-            uploaded_files = st.file_uploader("`.traj` または `.xyz` files をアップロード", type=["traj", "xyz"], accept_multiple_files=True, key=f"{session_id}_cat_upload")
+        if source_mode == "Upload files":
+            uploaded_files = st.file_uploader("Upload `.traj` or `.xyz` files", type=["traj", "xyz"], accept_multiple_files=True, key=f"{session_id}_cat_upload")
         else:
             labels = [f"{path.relative_to(session_dir(session_id))} ({file_size_label(path)})" for path in existing_inputs]
             if labels:
-                selected_labels = st.multiselect("既存のファイルを選択 (順序を反映します)", labels, key=f"{session_id}_cat_existing")
+                selected_labels = st.multiselect("Select existing files (order is preserved)", labels, key=f"{session_id}_cat_existing")
                 for label in selected_labels:
                     selected_existing.append(existing_inputs[labels.index(label)])
             else:
-                st.caption("このセッションには既存の `.traj` または `.xyz` file がまだありません。")
+                st.caption("This session does not have any existing `.traj` or `.xyz` files yet.")
                 
         st.markdown("**2. Batch processing steps (optional)**")
         step_cols = st.columns(3)
@@ -3386,12 +3386,12 @@ def render_concat_submission(session: dict) -> None:
         save_fig_key = f"{session_id}_cat_savefig"
         pick_optpoints_key = f"{session_id}_cat_pick_optpoints"
         save_fig_on = extra_cols[0].checkbox(
-            "図を保存",
+            "Save figures",
             key=save_fig_key,
             **widget_default_kwargs(save_fig_key, value=True),
         )
         pick_optpoints_on = extra_cols[1].checkbox(
-            "構造最適化点（optpoints）を抽出",
+            "Extract optimized points (optpoints)",
             key=pick_optpoints_key,
             **widget_default_kwargs(pick_optpoints_key, value=False),
         )
@@ -3399,10 +3399,10 @@ def render_concat_submission(session: dict) -> None:
 
         st.space("small")
         with st.container(horizontal=True, horizontal_alignment="right"):
-            reset_defaults_pressed = st.form_submit_button("リセット", icon=":material/restart_alt:")
-            save_defaults_pressed = st.form_submit_button("セッションのデフォルトにする", icon=":material/save:")
-            preview_pressed = st.form_submit_button("ワークフロー構造をプレビュー", icon=":material/account_tree:")
-            submitted = st.form_submit_button("ジョブをキューに追加", type="primary", icon=":material/queue:")
+            reset_defaults_pressed = st.form_submit_button("Reset", icon=":material/restart_alt:")
+            save_defaults_pressed = st.form_submit_button("Set as session default", icon=":material/save:")
+            preview_pressed = st.form_submit_button("Preview workflow structure", icon=":material/account_tree:")
+            submitted = st.form_submit_button("Add job to queue", type="primary", icon=":material/queue:")
 
     if reset_defaults_pressed:
         st.session_state[submit_reset_pending_key(session_id, CONCAT_SUBMIT_SECTION)] = True
@@ -3431,7 +3431,7 @@ def render_concat_submission(session: dict) -> None:
                 "pick_optpoints_on": bool(pick_optpoints_on),
             },
         )
-        st.success("この設定をセッションのデフォルトとして保存しました。")
+        st.success("Saved these settings as the session defaults.")
         st.rerun()
 
     if preview_pressed:
@@ -3450,24 +3450,24 @@ def render_concat_submission(session: dict) -> None:
 
     errors: list[str] = []
     if not method:
-        errors.append("Method は必須です。")
+        errors.append("Method is required.")
     if not result_name.endswith(".csv"):
-        errors.append("result CSV name は `.csv` で終わる必要があります。")
+        errors.append("Result CSV name must end with `.csv`.")
     effective_method = "orbmol+alpb" if method == "orbmol" and alpb_solvent != "None" else method
     if alpb_solvent != "None" and method != "orbmol":
         errors.append("Add ALPB solvent is only available when Method is 'orbmol'. Select 'None' or choose 'orbmol'.")
     try:
         fixed_atoms = parse_int_list(str(module_settings["fixed_atoms_text"]))
     except ValueError:
-        errors.append("Fixed atoms は comma 区切りの整数リストで指定してください。")
+        errors.append("Specify fixed atoms as a comma-separated list of integers.")
         fixed_atoms = []
     
-    if source_mode == "ファイルをアップロード":
+    if source_mode == "Upload files":
         if not uploaded_files:
-            errors.append("少なくとも 1 つのファイルをアップロードしてください。")
+            errors.append("Upload at least one file.")
     else:
         if not selected_existing:
-            errors.append("少なくとも 1 つの既存ファイルを選択してください。")
+            errors.append("Select at least one existing file.")
 
     if errors:
         for message in errors:
@@ -3504,7 +3504,7 @@ def render_concat_submission(session: dict) -> None:
 
     cat_paths = []
     manifest_inputs: list[dict[str, str]] = []
-    if source_mode == "ファイルをアップロード":
+    if source_mode == "Upload files":
         for index, uf in enumerate(uploaded_files, start=1):
             saved_path = write_uploaded_file(uf, input_root, uf.name)
             cat_paths.append(saved_path)
@@ -3586,7 +3586,7 @@ def render_concat_submission(session: dict) -> None:
     save_job(job)
     enqueue_job(job)
     ensure_worker_running()
-    st.success(f"ジョブ `{job['job_id']}` をキューに追加しました。")
+    st.success(f"Job `{job['job_id']}` added to the queue.")
 
 
 def render_session_jobs(session: dict) -> None:
@@ -3598,11 +3598,11 @@ def render_session_jobs(session: dict) -> None:
     refreshed_jobs: dict[str, dict] = {}
     
     with header_cols[1]:
-        if st.button(":material/refresh: jobs を更新", width="stretch"):
+        if st.button(":material/refresh: Refresh jobs", width="stretch"):
             refreshed_jobs = refresh_jobs(session["session_id"], jobs)
 
     if not jobs:
-        st.info("このセッションにはまだジョブがありません。")
+        st.info("This session has no jobs yet.")
         return
 
     jobs = [refreshed_jobs.get(job["job_id"], job) for job in jobs]
@@ -3615,7 +3615,7 @@ def render_session_jobs(session: dict) -> None:
     display_df = df[["job_id", "workflow", "status", "created_at", "notes"]].copy()
     display_df["created_at"] = display_df["created_at"].map(format_app_time)
 
-    st.markdown("### 詳細を見るジョブを選択")
+    st.markdown("### Select jobs to inspect")
 
     job_id_signature = hashlib.sha1(
         "|".join(display_df["job_id"].astype(str).tolist()).encode("utf-8")
@@ -3645,7 +3645,7 @@ def render_session_jobs(session: dict) -> None:
     ]
 
     if not selected_indices:
-        st.info("👆 詳細を見るには、上のテーブルで 1 件以上のジョブを選択してください。")
+        st.info("👆 Select one or more jobs in the table above to view details.")
         return
 
     selected_job_ids = display_df.iloc[selected_indices]["job_id"].tolist()
@@ -3653,7 +3653,7 @@ def render_session_jobs(session: dict) -> None:
     st.markdown("### Download")
     download_cols = st.columns([1, 1.2, 1.8, 1.8], vertical_alignment="center")
     flat_selected_zip = download_cols[0].checkbox("flat ZIP", key=f"{session['session_id']}_flat_selected_zip", value=True)
-    include_merged_csv = download_cols[1].checkbox("集計CSVを追加", key=f"{session['session_id']}_include_merged_csv", value=True)
+    include_merged_csv = download_cols[1].checkbox("Include merged CSV", key=f"{session['session_id']}_include_merged_csv", value=True)
     selected_job_ids_tuple = tuple(selected_job_ids)
     selected_job_signature = tuple(
         (
@@ -3674,11 +3674,11 @@ def render_session_jobs(session: dict) -> None:
     )
 
     if download_cols[2].button(
-        ":material/folder_zip: 選択ジョブZIPを生成",
+        ":material/folder_zip: Generate selected jobs ZIP",
         key=f"{session['session_id']}_generate_selected_jobs_zip",
         width="stretch",
     ):
-        with st.spinner("選択したジョブのZIPを作成中..."):
+        with st.spinner("Building ZIP for selected jobs..."):
             archive_path = cached_selected_jobs_archive(
                 session["session_id"],
                 selected_job_ids_tuple,
@@ -3687,14 +3687,14 @@ def render_session_jobs(session: dict) -> None:
                 selected_job_signature,
             )
         st.session_state[archive_state_key] = archive_path
-        st.success("選択したジョブのZIPを作成しました。")
+        st.success("ZIP for selected jobs has been created.")
 
     if download_cols[3].button(
-        ":material/table: 集計CSV ZIPを生成",
+        ":material/table: Generate merged CSV ZIP",
         key=f"{session['session_id']}_generate_merged_csv_zip",
         width="stretch",
     ):
-        with st.spinner("集計CSV ZIPを作成中..."):
+        with st.spinner("Building merged CSV ZIP..."):
             merged_archive_path = cached_merged_csv_archive(
                 session["session_id"],
                 selected_job_ids_tuple,
@@ -3703,16 +3703,16 @@ def render_session_jobs(session: dict) -> None:
             )
         if merged_archive_path:
             st.session_state[merged_state_key] = merged_archive_path
-            st.success("集計CSV ZIPを作成しました。")
+            st.success("Merged CSV ZIP has been created.")
         else:
             st.session_state.pop(merged_state_key, None)
-            st.info("一致する CSV file name がありません。")
+            st.info("No matching CSV file names were found.")
 
     selected_archive_raw = st.session_state.get(archive_state_key)
     selected_archive_path = Path(selected_archive_raw) if selected_archive_raw else None
     if selected_archive_path and selected_archive_path.exists():
         st.download_button(
-            ":material/download: 選択したジョブのZIPをダウンロード",
+            ":material/download: Download selected jobs ZIP",
             selected_archive_path.read_bytes(),
             file_name=selected_archive_path.name,
             mime="application/zip",
@@ -3723,7 +3723,7 @@ def render_session_jobs(session: dict) -> None:
     merged_archive_path = Path(merged_archive_raw) if merged_archive_raw else None
     if merged_archive_path and merged_archive_path.exists():
         st.download_button(
-            ":material/download: 集計CSV ZIPをダウンロード",
+            ":material/download: Download merged CSV ZIP",
             merged_archive_path.read_bytes(),
             file_name=merged_archive_path.name,
             mime="application/zip",
@@ -3735,13 +3735,13 @@ def render_session_jobs(session: dict) -> None:
 
     if len(selected_job_ids) > 1:
         target_job_id = st.selectbox(
-            "確認するジョブを選択:",
+            "Select job to inspect:",
             options=selected_job_ids,
             key=f"{session['session_id']}_target_job_dropdown"
         )
     else:
         target_job_id = selected_job_ids[0]
-        st.caption(f"表示中: **{target_job_id}**")
+        st.caption(f"Showing: **{target_job_id}**")
 
     target_job = next(job for job in jobs if job["job_id"] == target_job_id)
     target_index = jobs.index(target_job)
@@ -3765,25 +3765,25 @@ def render_job_results(job: dict) -> None:
     files = all_result_files(run_dir)
     job_root, job_json_files = all_job_json_files(job)
     if not files and not job_json_files:
-        st.info("出力はまだありません。")
+        st.info("No outputs yet.")
         return
 
     st.caption(f"result folder: `{run_dir}`")
     result_view = section_switch(
         "result view",
-        ["概要", "Logs", "Json", "XYZ", "Tables", "Images"],
+        ["Overview", "Logs", "Json", "XYZ", "Tables", "Images"],
         key=f"result_view_{job['job_id']}",
         captions={
-            "概要": "出力フォルダー概要とメインログ",
+            "Overview": "Output folder overview and main log",
             "Logs": ".log files",
             "Json": ".json files",
             "XYZ": ".xyz files",
-            "Tables": "反応プロファイルと導出データのCSVプレビュー",
-            "Images": "保存済みフィギュアとプロット",
+            "Tables": "CSV preview of reaction profiles and derived data",
+            "Images": "Saved figures and plots",
         },
     )
 
-    if result_view == "概要":
+    if result_view == "Overview":
         rows = [{"path": str(path.relative_to(run_dir)), "size": file_size_label(path)} for path in files]
         if rows:
             st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
@@ -3797,7 +3797,7 @@ def render_job_results(job: dict) -> None:
             selected = log_files[labels.index(st.selectbox("Log file", labels, key=f"log_{job['job_id']}"))]
             st.code(tail_text(selected, max_lines=280) or "(empty file)", language="text")
         else:
-            st.info(".log file はありません。")
+            st.info("No .log files.")
     elif result_view == "Json":
         if job_json_files:
             labels = [str(path.relative_to(job_root)) for path in job_json_files]
@@ -3814,7 +3814,7 @@ def render_job_results(job: dict) -> None:
             selected = xyz_files[labels.index(st.selectbox("XYZ file", labels, key=f"xyz_{job['job_id']}"))]
             st.code(tail_text(selected, max_lines=280) or "(empty file)", language="text")
         else:
-            st.info("XYZ file はありません。")
+            st.info("No XYZ files.")
     elif result_view == "Tables":
         csv_files = [path for path in files if path.suffix.lower() in TABLE_EXTENSIONS]
         if csv_files:
@@ -3823,7 +3823,7 @@ def render_job_results(job: dict) -> None:
             df = pd.read_csv(selected)
             st.dataframe(df, hide_index=True, height=320)
         else:
-            st.info("CSVファイルはありません。")
+            st.info("No CSV files.")
     elif result_view == "Images":
         image_files = [path for path in files if path.suffix.lower() in IMAGE_EXTENSIONS]
         if image_files:
@@ -3831,4 +3831,4 @@ def render_job_results(job: dict) -> None:
             selected = image_files[labels.index(st.selectbox("Image file", labels, key=f"img_{job['job_id']}"))]
             st.image(str(selected))
         else:
-            st.info("imageファイルはありません。")
+            st.info("No image files.")

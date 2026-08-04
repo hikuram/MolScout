@@ -9,11 +9,11 @@ from app_ui.sidebar import get_selected_session
 
 
 st.markdown("## :material/settings: PySCF")
-st.caption("選択中セッションの PySCF 設定を編集します。")
+st.caption("Edit PySCF settings for the selected session.")
 
 session = get_selected_session()
 if session:
     render_session_config(session)
 else:
-    st.info("サイドバーからセッションを作成してください。")
+    st.info("Create a session from the sidebar.")
 

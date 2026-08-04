@@ -13,7 +13,7 @@ from app_core.job_runner import molscout_log_candidates, reload_job
 from app_core.utils import tail_text
 
 st.markdown("## :material/lan: Queue")
-st.caption("共有キューと、選択中セッションの概要を確認します。")
+st.caption("View the shared queue and the selected session overview.")
 
 render_queue_panel()
 
@@ -23,7 +23,7 @@ queue_state = sync_queue_state()
 running_items = [item for item in queue_state["jobs"] if item["status"] == "running"]
 
 if not running_items:
-    st.caption("現在実行中のジョブはありません。")
+    st.caption("No job is currently running.")
 else:
     for item in running_items:
         job = reload_job(item["session_id"], item["job_id"])
@@ -39,12 +39,12 @@ else:
             st.caption(f"log file: `{log_path.relative_to(output_dir)}`")
             st.code(tail_text(log_path, max_lines=200) or "(empty file)", language="text")
         else:
-            st.caption("molscout.log はまだ生成されていません。")
+            st.caption("molscout.log has not been generated yet.")
 
 st.divider()
-st.markdown("### :material/group_work: 選択中セッション")
+st.markdown("### :material/group_work: Selected session")
 session = get_selected_session()
 if session:
     render_session_overview(session)
 else:
-    st.info("サイドバーからセッションを作成してください。")
+    st.info("Create a session from the sidebar.")

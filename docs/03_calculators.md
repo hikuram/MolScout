@@ -1,27 +1,27 @@
 # Calculator Backends: MolScout
 
-MolScout は、energy、force、および関連する molecular properties を評価するために ASE-compatible calculators を使用します。backend selection は `CALC_TYPE` と、`core/default_config.py` または app-provided overrides に含まれる関連 settings によって制御します。
+MolScout uses ASE-compatible calculators to evaluate energies, forces, and related molecular properties. Backend selection is controlled by `CALC_TYPE` and supporting settings in `core/default_config.py` or app-provided overrides.
 
 ## 1. OrbMol and MLIP backends
 
-`orbmol` は、`orb_models` を介して Orbital Materials models を使用し、高速な potential-energy-surface exploration を行います。この backend は initial path search、preliminary optimization、throughput が重要な workflow に適しています。
+`orbmol` uses Orbital Materials models through `orb_models` for fast potential-energy-surface exploration. This backend is suitable for initial path search, preliminary optimization, and workflows where throughput is important.
 
-`orbmol+alpb` は、MLIP gas-phase energy と xTB solvation delta correction を組み合わせます。delta term は tblite-based calculation で評価し、可能な範囲で intermediate results を再利用して repeated SCF work を減らします。
+`orbmol+alpb` combines the MLIP gas-phase energy with an xTB solvation delta correction. The delta term is evaluated through tblite-based calculations, and the implementation reuses intermediate results where possible to reduce repeated SCF work.
 
 ## 2. xTB and ALPB handling
 
-tblite path は、solvent correction workflow と method switching を支援し、early-stage path generation の安定化に利用できます。hybrid mode では、initial path generation で安定な xTB setting を使用し、downstream evaluations では production setting に戻すことができます。
+The tblite path supports solvent correction workflows and method switching for more robust early-stage path generation. In hybrid mode, the workflow can use a more stable xTB setting during initial path generation and then restore the production setting for downstream evaluations.
 
 ## 3. PySCF and gpu4pyscf
 
-PySCF backends は electronic-structure calculations と final refinement に使用します。CUDA support と gpu4pyscf が利用可能な場合、対応する calculation を GPU に offload できます。
+PySCF backends are used for electronic-structure calculations and final refinement. When CUDA support and gpu4pyscf are available, eligible calculations can be offloaded to the GPU.
 
-`core/pyscf_3c.py` helper は、`r2scan-3c` や `b97-3c` などの composite functionals に対応し、ASE interface に必要な dispersion-related gradients と Hessians を扱います。
+The `core/pyscf_3c.py` helper provides support for composite functionals such as `r2scan-3c` and `b97-3c`, including dispersion-related gradients and Hessians required by the ASE interface.
 
 ## 4. PySCF export
 
-`core/pyscf_exporter.py` は、対応する PySCF job の後処理として selected electronic-structure information を抽出します。export には orbital energies、HOMO/LUMO values、Mulliken charges、dipole moments、JSON summaries、Molden files を含めることができます。
+`core/pyscf_exporter.py` extracts selected electronic-structure information after supported PySCF jobs. Exports can include orbital energies, HOMO/LUMO values, Mulliken charges, dipole moments, JSON summaries, and Molden files for downstream inspection.
 
 ## 5. Configuration notes
 
-backend behavior は installed packages、hardware、numerical settings に依存します。production use の前に、job log と `molscout.log` で selected backend、charge、multiplicity、solvent setting、CUDA availability を確認してください。
+Backend behavior depends on installed packages, hardware, and numerical settings. Before production use, confirm the selected backend, charge, multiplicity, solvent setting, and CUDA availability in the job log and `molscout.log`.

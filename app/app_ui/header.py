@@ -12,8 +12,8 @@ def render_header() -> None:
     with st.container(border=True):
         st.markdown("# :material/science: MolScout Remote Queue")
         st.caption(
-            "長時間を要するワークフローを共有実行するための laboratory queue です。"
-            "ユーザーセッションとサーバーモニタリング機能を備えています。"
+            "Laboratory queue for shared execution of long-running workflows."
+            "Includes user sessions and server monitoring."
         )
         st.markdown(
             '<span class="app-badge">1 worker</span>'

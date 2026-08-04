@@ -9,24 +9,24 @@ from app_ui.sidebar import get_selected_session
 
 
 st.markdown("## :material/upload_file: Submit")
-st.caption("選択中セッションに新しいジョブを追加します。")
+st.caption("Add a new job to the selected session.")
 
 session = get_selected_session()
 if not session:
-    st.info("サイドバーからセッションを作成してください。")
+    st.info("Create a session from the sidebar.")
     st.stop()
 
 submit_view = section_switch(
     "submit workflow",
-    ["反応経路探索", "ファイル連結処理"],
+    ["Reaction path search", "File concatenation"],
     key=f"{session['session_id']}_submit_view",
     captions={
-        "反応経路探索": "最小エネルギー経路探索、IRC、振動解析をキューに追加します。",
-        "ファイル連結処理": "ファイル連結とバッチ処理をキューに追加します。",
+        "Reaction path search": "Queue minimum-energy path search, IRC, and vibrational analysis.",
+        "File concatenation": "Queue file concatenation and batch processing.",
     },
 )
 
-if submit_view == "反応経路探索":
+if submit_view == "Reaction path search":
     render_job_submission(session)
 else:
     render_concat_submission(session)

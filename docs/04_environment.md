@@ -1,58 +1,51 @@
 # Environment and Installation: MolScout
 
-MolScout の通常利用では、同梱の Dockerfile による installation を推奨します。計算環境は compiled extensions、CUDA-aware libraries、external numerical libraries を含む Python packages に依存します。単一の image definition を使用することで、local workstation、shared server、batch-style execution environment の間で生じる差を抑えられます。
+MolScout should be installed through the provided Dockerfile for routine use. The calculation environment depends on Python packages with compiled extensions, CUDA-aware libraries, and external numerical libraries. Using one image definition reduces differences between local workstations, shared servers, and batch-style execution environments.
 
-## 1. 推奨 Docker workflow
+## 1. Recommended Docker workflow
 
-repository root で image を build します。
+Build the image from the repository root:
 
 ```bash
 docker build -t molscout .
 ```
 
-GPU access を有効にした interactive container を起動します。
+Run an interactive container with GPU access:
 
 ```bash
 docker run --gpus all -it --rm -p 8501:8501 molscout
 ```
 
-container 内で app を起動します。
+Launch the app inside the container:
 
 ```bash
 streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
 ```
 
-command-line job を実行する場合も、同じ container environment から `core/molscout.py` を直接起動してください。
+For command-line jobs, run `core/molscout.py` directly from the same container environment.
 
 ## 2. Manual pip setup
 
-manual installation は、開発または syntax-level check に利用できます。
+Manual installation can be used for development or syntax-level checks:
 
 ```bash
 pip install -r requirements.txt
 pip install -r app/requirements.txt
 ```
 
-この方法では、CUDA、tblite、gpu4pyscf、compiled optimizer dependencies に関して Docker 環境と同一の動作は保証されません。manual installation 環境を production calculation に使う前に、job log で backend initialization を確認してください。
+This path does not guarantee identical behavior for CUDA, tblite, gpu4pyscf, or compiled optimizer dependencies. Confirm backend initialization in the job log before using manually installed environments for production calculations.
 
-## 3. 確認済み package versions
+## 3. Verified package versions
 
-現在の確認環境では、以下の package versions を使用しました。
+The current verification environment used the following package versions.
 
 | Package | Version |
 |---|---:|
+| Python | 3.12 |
 | ase | 3.28.0 |
-| matplotlib | 3.10.9 |
-| numpy | 2.4.6 |
-| orb-models | 0.7.0 |
-| pandas | 3.0.3 |
-| pillow | 12.2.0 |
+| sella | 0.0.1.dev386+g21c6dc7bf |
 | pydmf | 1.2.1 |
 | pyscf | 2.13.0 |
-| rmsd | 1.6.5 |
-| scipy | 1.17.1 |
-| seaborn | 0.13.2 |
-| sella | 0.0.1.dev386+g21c6dc7bf |
-| streamlit | 1.58.0 |
+| orb-models | 0.7.0 |
 | tblite | 0.6.0 |
 | torch | 2.12.0 |

@@ -93,18 +93,18 @@ def resolve_selected_session_id(sessions: list[dict]) -> str:
 
     return fallback
 
-@st.dialog("新規セッション作成")
+@st.dialog("Create new session")
 def open_create_session_dialog() -> None:
-    owner_label = st.text_input("表示名", value="")
-    notes = st.text_input("セッションノート", value="")
-    if st.button(":material/add: 作成", type="primary", width="stretch"):
+    owner_label = st.text_input("Display name", value="")
+    notes = st.text_input("Session notes", value="")
+    if st.button(":material/add: Create", type="primary", width="stretch"):
         session = create_session(owner_label=owner_label or "anonymous", notes=notes)
         persist_selected_session(session["session_id"])
         st.session_state[SESSION_SELECTOR_WIDGET_KEY] = session["session_id"]
         st.rerun()
 
 
-@st.dialog("環境チェック")
+@st.dialog("Environment check")
 def open_dependency_dialog() -> None:
     rows = dependency_rows()
     st.dataframe(
@@ -130,11 +130,11 @@ def open_dependency_dialog() -> None:
             st.code("\n".join(import_notes), language="text")
 
 
-@st.dialog("サンプル入力")
+@st.dialog("Sample inputs")
 def open_samples_dialog() -> None:
     sample_cases = list_sample_cases()
     if not sample_cases:
-        st.info("`core/sample_input/` に bundled sample pair が見つかりません。")
+        st.info("No bundled sample pairs were found under `core/sample_input/`.")
         return
     for name in sample_cases:
         st.write(f"- `{name}`")
@@ -152,15 +152,15 @@ def open_worker_log_dialog() -> None:
     )
 
 
-@st.dialog("クリーンアップ確認")
+@st.dialog("Cleanup confirmation")
 def open_cleanup_dialog() -> None:
-    st.warning("期限切れセッションと不要な待機キュー項目を削除します。")
-    st.caption("実行中ジョブは停止しません。削除対象は保持期限と現在のキュー状態から判定されます。")
-    if st.button(":material/delete_sweep: クリーンアップを実行", type="primary", width="stretch"):
+    st.warning("Delete expired sessions and unnecessary pending queue entries.")
+    st.caption("Running jobs are not stopped. Deletion targets are determined from the retention period and current queue state.")
+    if st.button(":material/delete_sweep: Run cleanup", type="primary", width="stretch"):
         result = run_cleanup()
         st.success(
-            f"クリーンアップ完了: 待機エントリー {result['queue_entries_removed']}件、"
-            f"期限切れセッション {result['sessions_deleted']}件を削除しました。"
+            f"Cleanup complete: removed {result['queue_entries_removed']} pending queue entries and "
+            f"{result['sessions_deleted']} expired sessions."
         )
 
 
@@ -179,8 +179,8 @@ def render_session_sidebar() -> dict | None:
     with st.container(border=True):
         st.markdown("## :material/group_work: Session")
         if not sessions:
-            st.info("セッションはまだありません。")
-            if st.button(":material/add: セッションを作成", type="primary", width="stretch"):
+            st.info("No sessions yet.")
+            if st.button(":material/add: Create session", type="primary", width="stretch"):
                 open_create_session_dialog()
             return None
 
@@ -195,14 +195,14 @@ def render_session_sidebar() -> dict | None:
             for item in sessions
         }
         selected_id = st.selectbox(
-            "セッション選択",
+            "Select session",
             session_ids,
             key=SESSION_SELECTOR_WIDGET_KEY,
             format_func=lambda session_id: labels[session_id],
             on_change=sync_selected_session_from_widget,
         )
 
-        if st.button(":material/add: 新規セッションを追加", type="primary", width="stretch"):
+        if st.button(":material/add: Add new session", type="primary", width="stretch"):
             open_create_session_dialog()
 
         session = touch_session(selected_id)
@@ -219,9 +219,9 @@ def render_session_sidebar() -> dict | None:
 def render_admin_sidebar() -> None:
     st.markdown("## :material/admin_panel_settings: Admin")
     cols = st.columns(2)
-    if cols[0].button(":material/fact_check: 環境", width="stretch"):
+    if cols[0].button(":material/fact_check: Environment", width="stretch"):
         open_dependency_dialog()
-    if cols[1].button(":material/science: サンプル", width="stretch"):
+    if cols[1].button(":material/science: Samples", width="stretch"):
         open_samples_dialog()
     cols = st.columns(2)
     if cols[0].button(":material/article: Log", width="stretch"):
