@@ -1,15 +1,12 @@
-FROM nvidia/cuda:13.3.1-devel-ubuntu24.04
+ARG NGC_PYTORCH_TAG=26.07-py3
+FROM nvcr.io/nvidia/pytorch:${NGC_PYTORCH_TAG}
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     CUDA_HOME=/usr/local/cuda \
-    PATH=/usr/local/cuda/bin:${PATH} \
-    LD_LIBRARY_PATH=/usr/local/cuda/lib64:${LD_LIBRARY_PATH} \
     TORCH_CUDA_ARCH_LIST="12.0" \
     CUPY_ACCELERATORS="cutensor,cub"
 
-ARG PYTORCH_INDEX=https://download.pytorch.org/whl/cu132
-ARG TORCH_VERSION=2.12.1+cu132
 ARG GPU4PYSCF_REF=v1.8.0
 ARG MOLSCOUT_REF=app-ja
 
@@ -27,12 +24,8 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
         libblas-dev \
         liblapack-dev \
         pkg-config \
-        python3 \
         python3-dev \
-        python3-pip \
-        python3-setuptools \
         python3-tk \
-        python3-wheel \
         coinor-libipopt1v5 \
         coinor-libipopt-dev \
         ttf-mscorefonts-installer \
@@ -40,20 +33,21 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
 
 COPY requirements.txt /tmp/requirements.txt
 
-# Install the CUDA build of PyTorch before the common Python dependencies.
-RUN pip3 install --no-cache-dir \
-        --index-url "${PYTORCH_INDEX}" \
-        "torch==${TORCH_VERSION}" \
-    && pip3 install --no-cache-dir \
-        -r /tmp/requirements.txt
+# PyTorch and its CUDA libraries are provided by the NGC base image.
+RUN python3 -m pip install --no-cache-dir \
+        -r /tmp/requirements.txt \
+    && python3 -c \
+        "import torch; print(f'torch={torch.__version__}, cuda={torch.version.cuda}')"
 
 # CUDA libraries used by GPU4PySCF.
-RUN pip3 install --no-cache-dir \
+RUN python3 -m pip install --no-cache-dir \
         "cupy-cuda13x==13.6.0" \
         "cutensor-cu13==2.3.*"
 
-# Make the cuTENSOR wheel library available to the linker.
-RUN CUTENSOR_SO="$(find /usr/local/lib/python3.12/dist-packages \
+# Make the cuTENSOR wheel library available to the system linker.
+RUN SITE_PACKAGES="$(python3 -c \
+        'import site; print(site.getsitepackages()[0])')" \
+    && CUTENSOR_SO="$(find "${SITE_PACKAGES}" \
         -name 'libcutensor.so*' -print -quit)" \
     && test -n "${CUTENSOR_SO}" \
     && dirname "${CUTENSOR_SO}" > /etc/ld.so.conf.d/cutensor.conf \
@@ -70,10 +64,12 @@ RUN git clone --depth 1 --branch "${GPU4PYSCF_REF}" \
     && cmake --build /opt/gpu4pyscf/build --parallel 4
 
 # Optional Skala exchange-correlation backend.
-# RUN pip3 install --no-cache-dir skala
+# RUN python3 -m pip install --no-cache-dir skala
 
 # Optional Streamlit interface.
-RUN pip3 install --no-cache-dir streamlit "chemiscope[streamlit]"
+RUN python3 -m pip install --no-cache-dir \
+        streamlit \
+        "chemiscope[streamlit]"
 
 RUN git clone --depth 1 --branch "${MOLSCOUT_REF}" \
         https://github.com/hikuram/MolScout.git /opt/MolScout
@@ -85,8 +81,10 @@ ENV PYTHONPATH="/opt/gpu4pyscf:/opt/MolScout/core:${PYTHONPATH}" \
 RUN fc-cache -f \
     && mkdir -p /root/.cache/matplotlib \
     && python3 -c "import matplotlib.pyplot" \
-    && python3 -c "from orb_models.forcefield import pretrained; pretrained.orbmol_v2(device='cpu', precision='float64')" \
-    && python3 -c "from orb_models.forcefield import pretrained; pretrained.orbmol_v1_conservative(device='cpu', precision='float64')"
+    && python3 -c \
+        "from orb_models.forcefield import pretrained; pretrained.orbmol_v2(device='cpu', precision='float64')" \
+    && python3 -c \
+        "from orb_models.forcefield import pretrained; pretrained.orbmol_v1_conservative(device='cpu', precision='float64')"
 
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \
