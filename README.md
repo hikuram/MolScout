@@ -50,30 +50,25 @@ streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
 
 ```bash
 pip install -r requirements.txt
-pip install -r app/requirements.txt
 ```
 
 ## 動作確認環境
 
 現在の確認環境では、以下の package version を使用しました。
 
-| Package | Version |
-|---|---:|
-| ase | 3.28.0 |
-| matplotlib | 3.10.9 |
-| numpy | 2.4.6 |
+| package | version |
+|---|---|
+| ase | 3.29.0 |
+| streamlit | 1.60.0 |
+| pydmf | 1.2.2 |
+| sella | 2.5.0 |
 | orb-models | 0.7.0 |
-| pandas | 3.0.3 |
-| pillow | 12.2.0 |
-| pydmf | 1.2.1 |
-| pyscf | 2.13.0 |
-| rmsd | 1.6.5 |
-| scipy | 1.17.1 |
-| seaborn | 0.13.2 |
-| sella | 0.0.1.dev386+g21c6dc7bf |
-| streamlit | 1.58.0 |
-| tblite | 0.6.0 |
-| torch | 2.12.0 |
+| pyscf | 2.14.0 |
+| tblite | 0.7.0 |
+| torch | 2.13.0a0+9186a08b2c.nv26.7.59513937 |
+| gpu4pyscf | 1.8.0 |
+| cupy | 13.6.0 |
+| cupytensor | 2.3.1 |
 
 ## Streamlit app の起動
 
