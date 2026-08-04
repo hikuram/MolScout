@@ -5,7 +5,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PIP_BREAK_SYSTEM_PACKAGES=1 \
     CUDA_HOME=/usr/local/cuda \
     TORCH_CUDA_ARCH_LIST="12.0" \
-    CUPY_ACCELERATORS="cutensor,cub"
+    CUPY_ACCELERATORS="cutensor,cub" \
+    LD_LIBRARY_PATH="/opt/hpcx/ucx/lib:/opt/hpcx/ucc/lib:${LD_LIBRARY_PATH}"
 
 ARG GPU4PYSCF_REF=v1.8.0
 ARG MOLSCOUT_REF=app-ja
@@ -17,15 +18,12 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
         build-essential \
         ca-certificates \
         cmake \
-        cython3 \
         fontconfig \
         gfortran \
         git \
         libblas-dev \
         liblapack-dev \
         pkg-config \
-        python3-dev \
-        python3-tk \
         coinor-libipopt1v5 \
         coinor-libipopt-dev \
         ttf-mscorefonts-installer \
@@ -33,18 +31,26 @@ RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula sele
 
 COPY requirements.txt /tmp/requirements.txt
 
+# Install the common Python dependencies.
 # PyTorch and its CUDA libraries are provided by the NGC base image.
 RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
-        requirements.txt > /tmp/requirements.ngc.txt \
+        /tmp/requirements.txt > /tmp/requirements.ngc.txt \
     && pip3 install --no-cache-dir \
-        -r /tmp/requirements.ngc.txt \
-    && python3 -c \
-        "import torch; print(f'torch={torch.__version__}, cuda={torch.version.cuda}')"
+        -r /tmp/requirements.ngc.txt
 
 # CUDA libraries used by GPU4PySCF.
 RUN python3 -m pip install --no-cache-dir \
         "cupy-cuda13x==13.6.0" \
         "cutensor-cu13==2.3.*"
+
+# Make the cuTENSOR wheel library available to the system linker.
+RUN SITE_PACKAGES="$(python3 -c \
+        'import site; print(" ".join(site.getsitepackages()))')" \
+    && CUTENSOR_SO="$(find ${SITE_PACKAGES} \
+        -name 'libcutensor.so*' -print -quit 2>/dev/null)" \
+    && test -n "${CUTENSOR_SO}" \
+    && dirname "${CUTENSOR_SO}" > /etc/ld.so.conf.d/cutensor.conf \
+    && ldconfig
 
 # Build GPU4PySCF for GeForce RTX 50-series Blackwell GPUs.
 RUN git clone --depth 1 --branch "${GPU4PYSCF_REF}" \
