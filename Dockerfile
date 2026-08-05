@@ -35,7 +35,7 @@ COPY requirements.txt /tmp/requirements.txt
 # PyTorch and its CUDA libraries are provided by the NGC base image.
 RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
         /tmp/requirements.txt > /tmp/requirements.ngc.txt \
-    && pip3 install --no-cache-dir \
+    && python3 -m pip install --no-cache-dir \
         -r /tmp/requirements.ngc.txt
 
 # CUDA libraries used by GPU4PySCF.
