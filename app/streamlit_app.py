@@ -10,14 +10,15 @@ st.set_page_config(
     layout="wide",
 )
 
+from app_core.database import ensure_database
 from app_core.paths import ensure_app_dirs
-from app_ui.views import ensure_worker_running, inject_css, maybe_run_startup_cleanup
+from app_ui.views import ensure_worker_running, inject_css
 from app_ui.sidebar import render_sidebar
 
 
 def main() -> None:
     ensure_app_dirs()
-    maybe_run_startup_cleanup()
+    ensure_database()
     ensure_worker_running()
     inject_css()
 
@@ -30,6 +31,7 @@ def main() -> None:
             st.Page("app_pages/submit_json.py", title="Submit (JSON)", icon=":material/data_object:"),
             st.Page("app_pages/results.py", title="Results", icon=":material/monitoring:"),
             st.Page("app_pages/chemiscope.py", title="Chemiscope", icon=":material/animation:"),
+            st.Page("app_pages/data_catalog.py", title="Data", icon=":material/database:"),
             st.Page("app_pages/pyscf.py", title="PySCF", icon=":material/settings:"),
             st.Page("app_pages/about.py", title="About", icon=":material/info:"),
         ],

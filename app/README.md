@@ -4,11 +4,12 @@
 
 ## 実行モデル
 
-- 各 user session は `app/data/sessions/` 以下に保存されます。
+- session、job、queue、application state の管理情報は PostgreSQL に保存されます。
+- 各 user session の入力・計算結果・ログは `data/sessions/` 以下に保存されます。
 - 各 job は session 内の `jobs/<job_id>/` に保存されます。
 - 共有 queue worker は、GPU / CPU usage を予測しやすくするため job を 1 件ずつ実行します。
 - runtime state は process exit code とは別に記録します。これにより、正常終了した process を「科学的に完了した job」と誤判定しにくくします。
-- session は標準で 30 日保持され、UI から手動削除できます。
+- job は UI から個別削除できます。期限ベースの cleanup は PostgreSQL 移行中のため凍結しています。
 
 ## App の対象範囲
 
@@ -18,17 +19,20 @@
 - queue status、job log、server resources、NVIDIA GPU status を確認できます。
 - 実行中 job の停止、queued job の削除、session 内 queue order の変更が可能です。
 - 単一 job directory または session 全体を ZIP archive として download できます。
+- 選択した成果物 file metadata を PostgreSQL に登録し、session 横断で検索できます。
+- DB record と filesystem の欠損・未登録・孤立 directory を診断できます。
 
 ## Directory layout
 
 - `app/streamlit_app.py`: main Streamlit entry point and top navigation
-- `app/app_pages/`: Queue、Submit、Results、Chemiscope、PySCF、About の page modules
+- `app/app_pages/`: Queue、Submit、Results、Chemiscope、Data、PySCF、About の page modules
 - `app/app_ui/`: shared Streamlit UI helpers and reusable view functions
-- `app/app_core/`: queue、session、monitoring、cleanup、archive、workflow helpers
-- `app/data/sessions/`: session ごとの working directories
-- `app/data/queue/`: shared queue state と worker PID
-- `app/data/logs/`: queue worker logs
-- `app/data/archives/`: generated ZIP archives
+- `app/app_core/`: database、queue、session、artifact catalog、monitoring、archive、workflow helpers
+- `data/sessions/`: session ごとの working directories
+- `data/queue/`: worker PID
+- `data/logs/`: queue worker logs
+- `data/archives/`: generated ZIP archives
+- PostgreSQL: session、job、shared queue、application state、artifact catalog metadata
 
 ## Page layout
 
@@ -36,25 +40,21 @@
 - `Submit`: 反応経路探索とファイル連結処理の job を投入します。
 - `Results`: セッション内 job、ログ、結果ファイル、ZIP download を確認します。
 - `Chemiscope`: 選択中セッション内の `.traj` / `.xyz` / `.extxyz` を chemiscope で可視化します。
+- `Data`: 全セッションの成果物検索、再スキャン、DB/filesystem 整合性診断を行います。
 - `PySCF`: 選択中セッションの PySCF 設定を編集します。
 - `About`: application overview と page guide を表示します。
 
-セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log、cleanup は全 page 共通の sidebar にあります。Cleanup は確認 dialog から実行します。Application title panel は通常操作画面から外し、About page にのみ配置しています。
+セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log は全 page 共通の sidebar にあります。Cleanup control は PostgreSQL 移行中のため無効化しています。Application title panel は通常操作画面から外し、About page にのみ配置しています。
 
 ## 推奨実行方法
 
-標準環境では、repository の Dockerfile を使用してください。repository root で image を build します。
+標準環境では、repository root から PostgreSQL と app を Compose で起動します。
 
 ```bash
-docker build -t molscout .
+podman compose up -d --build
 ```
 
-container から app を起動します。
-
-```bash
-docker run --gpus all -it --rm -p 8501:8501 molscout \
-  streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
-```
+PostgreSQL の永続 volume は `molscout_postgres`、計算ファイルの bind mount は `./data` です。
 
 local development に限り、依存関係を手動で install して repository root から Streamlit を起動できます。
 
@@ -73,6 +73,15 @@ streamlit run app/streamlit_app.py
 - figure-refresh job には trajectory (`.traj` または `.xyz`) と既存 result CSV の両方が必要です。
 - 使用中の Streamlit version が fragments に対応している場合、monitoring panel は 5 秒ごとに更新されます。
 - Chemiscope page には `chemiscope[streamlit]` が必要です。`app/requirements.txt` に app 追加依存をまとめています。
+
+## Artifact catalog
+
+- `.traj`、structure、CSV/TSV、figure、log/text、JSON/YAML/TOML、selected scientific data、ZIP を catalog 対象とします。
+- file content は PostgreSQL に格納せず、`data/` からの relative path、type、role、size、modified time、manifest 由来 metadata を登録します。
+- `*.runtime.json`、PID/lock/exit file、legacy `session.json` / `job.json` は catalog 対象外です。
+- job が completed / failed / cancelled の terminal state に移る際、job directory を自動走査します。catalog 登録失敗は calculation status を変更せず、job metadata の `artifact_catalog_error` に記録します。
+- 既存 data の一括登録は `python scripts/index_artifacts.py`、件数確認だけなら `--dry-run` を使用します。
+- Data page の保守操作は catalog refresh と診断だけであり、file・DB record の削除や自動修復は行いません。
 
 ## SCAN GUI notes
 

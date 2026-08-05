@@ -1,12 +1,10 @@
-"""Cleanup routines for expired sessions and stale queue state."""
+"""Frozen cleanup routines retained for a later PostgreSQL-aware redesign."""
 
 from __future__ import annotations
 
 from .paths import SESSION_RETENTION_DAYS
 from .queue_manager import queue_snapshot, remove_from_queue, sync_queue_state
 from .session_manager import delete_job_files, delete_session_files, get_job, list_jobs, list_sessions, save_job, session_is_expired
-from .storage import read_app_state, write_app_state
-from .utils import now_iso
 
 
 def cleanup_stale_jobs() -> dict[str, int]:
@@ -43,10 +41,4 @@ def cleanup_expired_sessions(retention_days: int = SESSION_RETENTION_DAYS) -> di
 
 
 def run_cleanup(retention_days: int = SESSION_RETENTION_DAYS) -> dict[str, int]:
-    result = {}
-    result.update(cleanup_stale_jobs())
-    result.update(cleanup_expired_sessions(retention_days))
-    app_state = read_app_state()
-    app_state["last_cleanup_at"] = now_iso()
-    write_app_state(app_state)
-    return result
+    raise RuntimeError("Cleanup is frozen during the PostgreSQL migration.")

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app_core.cleanup_manager import run_cleanup
 from app_core.paths import WORKER_LOG_FILE
 from app_core.session_manager import create_session, list_jobs, list_sessions, touch_session
 from app_core.utils import tail_text
@@ -152,18 +151,6 @@ def open_worker_log_dialog() -> None:
     )
 
 
-@st.dialog("クリーンアップ確認")
-def open_cleanup_dialog() -> None:
-    st.warning("期限切れセッションと不要な待機キュー項目を削除します。")
-    st.caption("実行中ジョブは停止しません。削除対象は保持期限と現在のキュー状態から判定されます。")
-    if st.button(":material/delete_sweep: クリーンアップを実行", type="primary", width="stretch"):
-        result = run_cleanup()
-        st.success(
-            f"クリーンアップ完了: 待機エントリー {result['queue_entries_removed']}件、"
-            f"期限切れセッション {result['sessions_deleted']}件を削除しました。"
-        )
-
-
 def get_selected_session() -> dict | None:
     sessions = list_sessions()
     if not sessions:
@@ -226,8 +213,12 @@ def render_admin_sidebar() -> None:
     cols = st.columns(2)
     if cols[0].button(":material/article: Log", width="stretch"):
         open_worker_log_dialog()
-    if cols[1].button(":material/delete_sweep: Cleanup", width="stretch"):
-        open_cleanup_dialog()
+    cols[1].button(
+        ":material/delete_sweep: Cleanup",
+        width="stretch",
+        disabled=True,
+        help="PostgreSQL移行中のためクリーンアップ機能は凍結しています。",
+    )
 
 
 def render_sidebar() -> dict | None:

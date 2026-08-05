@@ -6,6 +6,7 @@ import os
 import time
 from pathlib import Path
 
+from .database import ensure_database
 from .paths import AUTO_REFRESH_SECONDS, WORKER_LOCK_FILE, WORKER_LOG_FILE, WORKER_PID_FILE, ensure_app_dirs
 from .queue_manager import run_next_queued_job, sync_queue_state
 from .utils import locked_file, now_iso
@@ -19,6 +20,7 @@ def append_worker_log(message: str) -> None:
 
 def worker_loop() -> None:
     ensure_app_dirs()
+    ensure_database()
     WORKER_PID_FILE.write_text(str(os.getpid()), encoding="utf-8")
     append_worker_log("worker started")
     with locked_file(WORKER_LOCK_FILE):

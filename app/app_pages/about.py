@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import streamlit as st
 
-from app_core.paths import AUTO_REFRESH_SECONDS, SESSION_RETENTION_DAYS
+from app_core.paths import AUTO_REFRESH_SECONDS
 
 
 st.markdown("# :material/science: MolScout Remote Queue")
@@ -15,7 +15,7 @@ st.caption(
 st.markdown(
     '<span class="app-badge">1 worker</span>'
     f'<span class="app-badge">{AUTO_REFRESH_SECONDS}s refresh</span>'
-    f'<span class="app-badge">{SESSION_RETENTION_DAYS} day retention</span>',
+    '<span class="app-badge">PostgreSQL metadata</span>',
     unsafe_allow_html=True,
 )
 
@@ -27,6 +27,8 @@ st.markdown(
 - **Queue**: 共有キューと選択中セッションの概要を確認します。
 - **Submit**: 反応経路探索とファイル連結処理の job を投入します。
 - **Results**: セッション内 job、ログ、結果ファイル、ZIP download を確認します。
+- **Chemiscope**: trajectory / structure を可視化します。
+- **Data**: 全セッションの成果物検索と DB/filesystem 整合性診断を行います。
 - **PySCF**: 選択中セッションの PySCF 設定を編集します。
 """
 )
@@ -34,7 +36,7 @@ st.markdown(
 st.markdown("### Sidebar")
 st.markdown(
     """
-セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log、cleanup は全 page 共通の sidebar にあります。
-Cleanup は確認 dialog から実行します。
+セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log は全 page 共通の sidebar にあります。
+期限ベースの Cleanup は PostgreSQL 移行中のため凍結しています。
 """
 )

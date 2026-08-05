@@ -10,6 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .artifact_manager import scan_job_artifacts
 from .config import OUTPUT_CATEGORY_DIRS, WORKFLOW_LABELS
 from .paths import APP_DIR, CORE_DIR, PROJECT_ROOT
 from .session_manager import get_job, save_job
@@ -202,6 +203,21 @@ def finalize_job(job: dict, runtime: dict, exit_code: int | None, *, pid_running
 
     job["finished_at"] = runtime.get("finished_at") or now_iso()
     job["queue_position"] = None
+
+    try:
+        catalog_result = scan_job_artifacts(
+            str(job["session_id"]),
+            job,
+            source="job_finalize",
+        )
+    except Exception as exc:
+        # Artifact indexing must never change a completed calculation into a failed job.
+        job["artifact_catalog_error"] = f"{type(exc).__name__}: {exc}"
+    else:
+        job["artifact_cataloged_at"] = now_iso()
+        job["artifact_catalog_count"] = catalog_result["artifact_count"]
+        job["artifact_catalog_marked_missing"] = catalog_result["marked_missing"]
+        job["artifact_catalog_error"] = ""
     return job
 
 

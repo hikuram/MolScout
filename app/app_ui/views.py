@@ -25,7 +25,6 @@ from app_core.archive_manager import (
     build_selected_jobs_archive,
     build_session_archive,
 )
-from app_core.cleanup_manager import run_cleanup
 from app_core.config import (
     DEFAULT_ALPB_SOLVENT,
     DEFAULT_ORBMOL_VERSION,
@@ -70,7 +69,6 @@ from app_core.session_manager import (
     session_dir,
     touch_session,
 )
-from app_core.storage import read_app_state, write_app_state
 from app_core.system_monitor import system_snapshot
 from app_core.utils import file_size_label, now_iso, safe_name, tail_text
 
@@ -689,17 +687,6 @@ def ensure_worker_running() -> None:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-
-
-def maybe_run_startup_cleanup() -> None:
-    state = read_app_state()
-    last_cleanup = state.get("last_cleanup_at")
-    if not last_cleanup:
-        run_cleanup()
-        return
-    last_date = last_cleanup[:10]
-    if last_date != now_iso()[:10]:
-        run_cleanup()
 
 
 def _first_available_import(module_names: list[str]) -> tuple[str | None, str | None]:

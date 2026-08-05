@@ -9,7 +9,6 @@ ENV DEBIAN_FRONTEND=noninteractive \
     LD_LIBRARY_PATH="/opt/hpcx/ucx/lib:/opt/hpcx/ucc/lib:${LD_LIBRARY_PATH}"
 
 ARG GPU4PYSCF_REF=v1.8.0
-ARG MOLSCOUT_REF=app-ja
 
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
         | debconf-set-selections \
@@ -70,8 +69,7 @@ RUN python3 -m pip install --no-cache-dir \
         streamlit \
         "chemiscope[streamlit]"
 
-RUN git clone --depth 1 --branch "${MOLSCOUT_REF}" \
-        https://github.com/hikuram/MolScout.git /opt/MolScout
+COPY . /opt/MolScout
 
 ENV PYTHONPATH="/opt/gpu4pyscf:/opt/MolScout/core:${PYTHONPATH}" \
     HF_HOME=/opt/MolScout/.cache/huggingface
