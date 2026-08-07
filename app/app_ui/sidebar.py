@@ -21,6 +21,12 @@ SESSION_QUERY_PARAM_KEY = "session"
 APPLIED_QUERY_SESSION_STATE_KEY = "selected_session_query_applied"
 PENDING_WIDGET_SESSION_STATE_KEY = "selected_session_widget_pending"
 
+DB_SELECTED_SESSION_STATE_KEY = "database_selected_session_id"
+DB_SESSION_SELECTOR_WIDGET_KEY = "database_session_selector_id"
+DB_SELECTED_JOB_STATE_KEY = "database_selected_job_id"
+DB_JOB_SELECTOR_WIDGET_KEY = "database_job_selector_id"
+DB_REFRESH_GENERATION_STATE_KEY = "database_refresh_generation"
+
 
 def current_query_session_id() -> str:
     """Return the session ID from the current URL query parameter."""
@@ -203,6 +209,150 @@ def render_session_sidebar() -> dict | None:
         return session
 
 
+def _resolve_database_session_id(sessions: list[dict]) -> str:
+    session_ids = [str(item["session_id"]) for item in sessions]
+    selected = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
+    if selected in session_ids:
+        return selected
+
+    queue_selected = str(st.session_state.get(SELECTED_SESSION_STATE_KEY) or "")
+    fallback = queue_selected if queue_selected in session_ids else (session_ids[0] if session_ids else "")
+    if fallback:
+        st.session_state[DB_SELECTED_SESSION_STATE_KEY] = fallback
+    return fallback
+
+
+def _sync_database_session_from_widget() -> None:
+    selected = str(st.session_state.get(DB_SESSION_SELECTOR_WIDGET_KEY) or "")
+    if not selected:
+        return
+    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected
+    st.session_state[DB_SELECTED_JOB_STATE_KEY] = ""
+
+
+def _resolve_database_job_id(jobs: list[dict]) -> str:
+    job_ids = [str(item["job_id"]) for item in jobs]
+    selected = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
+    if selected in job_ids:
+        return selected
+
+    fallback = job_ids[-1] if job_ids else ""
+    if fallback:
+        st.session_state[DB_SELECTED_JOB_STATE_KEY] = fallback
+    return fallback
+
+
+def _sync_database_job_from_widget() -> None:
+    selected = str(st.session_state.get(DB_JOB_SELECTOR_WIDGET_KEY) or "")
+    if selected:
+        st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected
+
+
+def database_selection() -> tuple[str, str]:
+    """Return the database sidebar session/job selection for this browser tab."""
+    return (
+        str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or ""),
+        str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or ""),
+    )
+
+
+def render_database_sidebar() -> dict | None:
+    """Render database browsing context without changing the queue session."""
+    sessions = list_sessions()
+
+    with st.sidebar:
+        with st.container(border=True):
+            st.markdown("## :material/database: Database")
+            if not sessions:
+                st.info("セッションはまだありません。")
+                if st.button(
+                    ":material/refresh: Refresh",
+                    width="stretch",
+                    key="database_refresh_empty",
+                ):
+                    st.session_state[DB_REFRESH_GENERATION_STATE_KEY] = (
+                        int(st.session_state.get(DB_REFRESH_GENERATION_STATE_KEY, 0)) + 1
+                    )
+                return None
+
+            session_ids = [str(item["session_id"]) for item in sessions]
+            selected_session_id = _resolve_database_session_id(sessions)
+            if st.session_state.get(DB_SESSION_SELECTOR_WIDGET_KEY) != selected_session_id:
+                st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = selected_session_id
+
+            session_labels = {
+                str(item["session_id"]): (
+                    f"{item['session_id']} | {item.get('owner_label', 'anonymous')} | "
+                    f"jobs {len(item.get('job_order', []))}"
+                )
+                for item in sessions
+            }
+            selected_session_id = st.selectbox(
+                "Session",
+                session_ids,
+                key=DB_SESSION_SELECTOR_WIDGET_KEY,
+                format_func=lambda session_id: session_labels[session_id],
+                on_change=_sync_database_session_from_widget,
+            )
+            st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected_session_id
+
+            jobs = list_jobs(selected_session_id)
+            selected_job = None
+            if jobs:
+                job_ids = [str(item["job_id"]) for item in jobs]
+                selected_job_id = _resolve_database_job_id(jobs)
+                if st.session_state.get(DB_JOB_SELECTOR_WIDGET_KEY) != selected_job_id:
+                    st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = selected_job_id
+
+                job_labels = {
+                    str(item["job_id"]): (
+                        f"{item['job_id']} | {item.get('workflow') or item.get('name') or '-'} | "
+                        f"{item.get('status') or '-'}"
+                    )
+                    for item in jobs
+                }
+                selected_job_id = st.selectbox(
+                    "Target Job",
+                    job_ids,
+                    key=DB_JOB_SELECTOR_WIDGET_KEY,
+                    format_func=lambda job_id: job_labels[job_id],
+                    on_change=_sync_database_job_from_widget,
+                )
+                st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected_job_id
+                selected_job = next(
+                    (item for item in jobs if str(item["job_id"]) == selected_job_id),
+                    None,
+                )
+
+                if selected_job:
+                    cols = st.columns(2)
+                    cols[0].metric("Status", selected_job.get("status") or "-")
+                    cols[1].metric(
+                        "Indexed Files",
+                        int(selected_job.get("artifact_catalog_count") or 0),
+                    )
+                    workflow = selected_job.get("workflow") or selected_job.get("name") or "-"
+                    method = selected_job.get("method") or "-"
+                    st.caption(f"{workflow} | {method}")
+            else:
+                st.session_state.pop(DB_SELECTED_JOB_STATE_KEY, None)
+                st.session_state.pop(DB_JOB_SELECTOR_WIDGET_KEY, None)
+                st.info("このセッションにはジョブがありません。")
+
+            if st.button(
+                ":material/refresh: Refresh",
+                width="stretch",
+                key="database_refresh",
+                help="DBとファイルを現在の状態で読み直します。",
+            ):
+                st.session_state[DB_REFRESH_GENERATION_STATE_KEY] = (
+                    int(st.session_state.get(DB_REFRESH_GENERATION_STATE_KEY, 0)) + 1
+                )
+
+            st.caption("Manual refresh only")
+            return selected_job
+
+
 def render_admin_sidebar() -> None:
     st.markdown("## :material/admin_panel_settings: Admin")
     cols = st.columns(2)
@@ -221,10 +371,16 @@ def render_admin_sidebar() -> None:
     )
 
 
-def render_sidebar() -> dict | None:
+def render_queue_sidebar() -> dict | None:
+    """Render the existing queue/session sidebar unchanged in behavior."""
     with st.sidebar:
         session = render_session_sidebar()
         sidebar_monitor_fragment()
         st.divider()
         render_admin_sidebar()
     return session
+
+
+def render_sidebar() -> dict | None:
+    """Backward-compatible alias for the queue-style sidebar."""
+    return render_queue_sidebar()

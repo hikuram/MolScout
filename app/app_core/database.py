@@ -402,6 +402,7 @@ def search_artifact_records(
     *,
     text: str = "",
     session_id: str = "",
+    job_id: str = "",
     artifact_type: str = "",
     availability_status: str = "",
     job_status: str = "",
@@ -429,6 +430,9 @@ def search_artifact_records(
     if session_id:
         where.append("a.session_id = %s")
         params.append(session_id)
+    if job_id:
+        where.append("a.job_id = %s")
+        params.append(job_id)
     if artifact_type:
         where.append("a.artifact_type = %s")
         params.append(artifact_type)

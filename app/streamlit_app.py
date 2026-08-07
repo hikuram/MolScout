@@ -13,7 +13,7 @@ st.set_page_config(
 from app_core.database import ensure_database
 from app_core.paths import ensure_app_dirs
 from app_ui.views import ensure_worker_running, inject_css
-from app_ui.sidebar import render_sidebar
+from app_ui.sidebar import render_database_sidebar, render_queue_sidebar
 
 
 def main() -> None:
@@ -21,8 +21,6 @@ def main() -> None:
     ensure_database()
     ensure_worker_running()
     inject_css()
-
-    render_sidebar()
 
     page = st.navigation(
         [
@@ -37,6 +35,12 @@ def main() -> None:
         ],
         position="top",
     )
+
+    if page.title == "Data":
+        render_database_sidebar()
+    else:
+        render_queue_sidebar()
+
     page.run()
 
 

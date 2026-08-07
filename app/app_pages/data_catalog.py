@@ -17,7 +17,8 @@ from app_core.database import (
     artifact_summary,
     search_artifact_records,
 )
-from app_core.session_manager import list_sessions
+from app_core.session_manager import get_job, list_sessions
+from app_ui.sidebar import database_selection
 from app_ui.views import format_app_time
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -52,8 +53,37 @@ def render_summary() -> None:
     cols[4].metric("Jobs", summary["job_count"])
 
 
+def render_database_target() -> None:
+    session_id, job_id = database_selection()
+    if not session_id:
+        return
+
+    st.markdown("### :material/target: Database Target")
+    if not job_id:
+        st.caption(f"Session: `{session_id}` | No target job")
+        return
+
+    job = get_job(session_id, job_id)
+    if not job:
+        st.warning("選択したジョブは現在DBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+        return
+
+    records = search_artifact_records(
+        session_id=session_id,
+        job_id=job_id,
+        limit=5000,
+    )
+    cols = st.columns(4)
+    cols[0].metric("Status", job.get("status") or "-")
+    cols[1].metric("Workflow", job.get("workflow") or job.get("name") or "-")
+    cols[2].metric("Method", job.get("method") or "-")
+    cols[3].metric("Indexed Files", len(records))
+    st.caption(f"Session `{session_id}` / Job `{job_id}`")
+
+
 def render_catalog() -> None:
     render_summary()
+    render_database_target()
     filter_values = artifact_filter_values()
     sessions = list_sessions()
     session_ids = [str(item["session_id"]) for item in sessions]
