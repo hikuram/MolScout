@@ -56,6 +56,7 @@ def filter_files_for_jobs(files_df: pd.DataFrame, job_ids: list[str]) -> pd.Data
     return files_df[files_df["rel_path"].astype(str).str.startswith(prefixes)].reset_index(drop=True)
 
 
+st.set_page_config(page_title="MolScout [Chemiscope]")
 st.markdown("## :material/animation: Chemiscope")
 st.caption("Database sidebarで選択したジョブの trajectory / XYZ を chemiscope で確認します。")
 

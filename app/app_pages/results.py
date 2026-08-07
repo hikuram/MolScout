@@ -35,5 +35,6 @@ if job_index is None:
     jobs = [*jobs, job]
     job_index = len(jobs) - 1
 
+st.set_page_config(page_title="MolScout [Results]")
 st.caption(f"Session `{session_id}` / Job `{job_id}`")
 render_job_detail(session_id, job, jobs, job_index, show_summary=False)

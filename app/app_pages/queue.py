@@ -12,6 +12,7 @@ from app_core.queue_manager import sync_queue_state
 from app_core.job_runner import molscout_log_candidates, reload_job
 from app_core.utils import tail_text
 
+st.set_page_config(page_title="MolScout [Queue]")
 st.markdown("## :material/lan: Queue")
 st.caption("共有キューと、選択中セッションの概要を確認します。")
 

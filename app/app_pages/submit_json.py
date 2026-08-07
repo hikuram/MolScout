@@ -187,6 +187,7 @@ def load_pyscf_source(
     }
 
 
+st.set_page_config(page_title="MolScout [Submit JSON]")
 st.markdown("## :material/data_object: Submit (JSON)")
 st.caption("Load a MolScout JSON configuration, attach its input structures, and submit a new job.")
 

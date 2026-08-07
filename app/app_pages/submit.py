@@ -8,6 +8,7 @@ from app_ui.views import render_concat_submission, render_job_submission, sectio
 from app_ui.sidebar import get_selected_session
 
 
+st.set_page_config(page_title="MolScout [Submit]")
 st.markdown("## :material/upload_file: Submit")
 st.caption("選択中セッションに新しいジョブを追加します。")
 

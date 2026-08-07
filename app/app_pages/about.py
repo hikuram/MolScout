@@ -7,6 +7,7 @@ import streamlit as st
 from app_core.paths import AUTO_REFRESH_SECONDS
 
 
+st.set_page_config(page_title="MolScout [About]")
 st.markdown("# :material/science: MolScout Remote Queue")
 st.caption(
     "長時間を要するワークフローを共有実行するための laboratory queue です。"
