@@ -7,6 +7,16 @@ import shutil
 from pathlib import Path
 
 from .config import INPUT_EXTENSIONS
+from .database import (
+    delete_job_payload,
+    delete_session_payload,
+    list_job_payloads,
+    list_session_payloads,
+    read_job_payload,
+    read_session_payload,
+    write_job_payload,
+    write_session_payload,
+)
 from .paths import ARCHIVES_DIR, CORE_DIR, SESSIONS_DIR
 from .utils import now_iso, parse_iso, safe_name, slug_with_timestamp
 
@@ -16,6 +26,7 @@ def session_dir(session_id: str) -> Path:
 
 
 def session_meta_path(session_id: str) -> Path:
+    """Legacy metadata path retained only for migration/reference purposes."""
     return session_dir(session_id) / "session.json"
 
 
@@ -28,6 +39,7 @@ def job_dir(session_id: str, job_id: str) -> Path:
 
 
 def job_meta_path(session_id: str, job_id: str) -> Path:
+    """Legacy metadata path retained only for migration/reference purposes."""
     return job_dir(session_id, job_id) / "job.json"
 
 
@@ -109,6 +121,10 @@ def default_job_payload(session_id: str, job_id: str) -> dict:
         "stdout_log": str(job_root / "stdout.log"),
         "command": [],
         "manifest_path": str(job_root / "job_manifest.json"),
+        "artifact_cataloged_at": None,
+        "artifact_catalog_count": 0,
+        "artifact_catalog_marked_missing": 0,
+        "artifact_catalog_error": "",
         "notes": "",
         "delete_requested": False,
         "delete_requested_at": None,
@@ -123,38 +139,25 @@ def create_session(owner_label: str, notes: str = "") -> dict:
     (root / "logs").mkdir(parents=True, exist_ok=True)
     payload = default_session_payload(session_id, owner_label)
     payload["notes"] = notes
-    session_meta_path(session_id).write_text("", encoding="utf-8")
-    from .storage import write_json_file
-
-    write_json_file(session_meta_path(session_id), ensure_session_pyscf_config_payload(payload))
+    write_session_payload(ensure_session_pyscf_config_payload(payload))
     return payload
 
 
 def list_sessions() -> list[dict]:
-    from .storage import read_json_file
-
-    sessions = []
-    for path in sorted(SESSIONS_DIR.glob("*/session.json")):
-        payload = read_json_file(path, {})
-        if payload:
-            sessions.append(ensure_session_pyscf_config_payload(payload))
+    sessions = [ensure_session_pyscf_config_payload(payload) for payload in list_session_payloads()]
     sessions.sort(key=lambda item: item.get("updated_at", ""), reverse=True)
     return sessions
 
 
 def get_session(session_id: str) -> dict | None:
-    from .storage import read_json_file
-
-    payload = read_json_file(session_meta_path(session_id), {})
+    payload = read_session_payload(session_id)
     return ensure_session_pyscf_config_payload(payload) if payload else None
 
 
 def save_session(payload: dict) -> None:
-    from .storage import write_json_file
-
     payload = ensure_session_pyscf_config_payload(payload)
     payload["updated_at"] = now_iso()
-    write_json_file(session_meta_path(payload["session_id"]), payload)
+    write_session_payload(payload)
 
 
 def touch_session(session_id: str) -> dict | None:
@@ -169,7 +172,8 @@ def touch_session(session_id: str) -> dict | None:
 
 def next_job_id(session_id: str, workflow: str) -> str:
     prefix = safe_name(workflow.lower().replace(" ", "-"), fallback="job")
-    existing = {path.name for path in jobs_dir(session_id).glob("*") if path.is_dir()}
+    existing = {job["job_id"] for job in list_job_payloads(session_id)}
+    existing.update(path.name for path in jobs_dir(session_id).glob("*") if path.is_dir())
     index = 1
     while True:
         candidate = f"{index:03d}-{prefix}"
@@ -179,8 +183,6 @@ def next_job_id(session_id: str, workflow: str) -> str:
 
 
 def create_job(session_id: str, owner_label: str, workflow: str) -> dict:
-    from .storage import write_json_file
-
     job_id = next_job_id(session_id, workflow)
     root = job_dir(session_id, job_id)
     for child in ["inputs", "artifacts"]:
@@ -189,7 +191,7 @@ def create_job(session_id: str, owner_label: str, workflow: str) -> dict:
     payload["name"] = workflow
     payload["workflow"] = workflow
     payload["owner_label"] = owner_label or "anonymous"
-    write_json_file(job_meta_path(session_id, job_id), payload)
+    write_job_payload(payload)
 
     session = get_session(session_id)
     if session:
@@ -199,16 +201,10 @@ def create_job(session_id: str, owner_label: str, workflow: str) -> dict:
 
 
 def list_jobs(session_id: str) -> list[dict]:
-    from .storage import read_json_file
-
     session = get_session(session_id)
     if not session:
         return []
-    payloads = {}
-    for path in sorted(jobs_dir(session_id).glob("*/job.json")):
-        payload = read_json_file(path, {})
-        if payload:
-            payloads[payload["job_id"]] = payload
+    payloads = {payload["job_id"]: payload for payload in list_job_payloads(session_id)}
     ordered = []
     for job_id in session.get("job_order", []):
         if job_id in payloads:
@@ -218,17 +214,12 @@ def list_jobs(session_id: str) -> list[dict]:
 
 
 def get_job(session_id: str, job_id: str) -> dict | None:
-    from .storage import read_json_file
-
-    payload = read_json_file(job_meta_path(session_id, job_id), {})
-    return payload or None
+    return read_job_payload(session_id, job_id)
 
 
 def save_job(payload: dict) -> None:
-    from .storage import write_json_file
-
     payload["updated_at"] = now_iso()
-    write_json_file(job_meta_path(payload["session_id"], payload["job_id"]), payload)
+    write_job_payload(payload)
 
 
 def reorder_session_jobs(session_id: str, new_order: list[str]) -> None:
@@ -240,10 +231,12 @@ def reorder_session_jobs(session_id: str, new_order: list[str]) -> None:
 
 
 def delete_job_files(session_id: str, job_id: str) -> None:
+    delete_job_payload(session_id, job_id)
     shutil.rmtree(job_dir(session_id, job_id), ignore_errors=True)
 
 
 def delete_session_files(session_id: str) -> None:
+    delete_session_payload(session_id)
     shutil.rmtree(session_dir(session_id), ignore_errors=True)
 
 
@@ -251,8 +244,7 @@ def session_is_expired(session_payload: dict, retention_days: int) -> bool:
     last_seen = parse_iso(session_payload.get("last_accessed_at")) or parse_iso(session_payload.get("updated_at"))
     if not last_seen:
         return False
-    age = now_iso()
-    current = parse_iso(age)
+    current = parse_iso(now_iso())
     if not current:
         return False
     return (current - last_seen).days >= retention_days

@@ -66,6 +66,12 @@ PACKAGE_CHECKS = [
         "label": "GUI runtime",
     },
     {
+        "package": "psycopg",
+        "imports": ["psycopg"],
+        "distributions": ["psycopg", "psycopg-binary"],
+        "label": "PostgreSQL metadata storage",
+    },
+    {
         "package": "pydmf",
         "imports": ["dmf"],
         "distributions": ["pydmf"],

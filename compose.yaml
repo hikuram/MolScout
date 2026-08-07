@@ -1,4 +1,21 @@
 services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: molscout_postgres
+    restart: always
+    environment:
+      TZ: Asia/Tokyo
+      POSTGRES_DB: ${POSTGRES_DB:-molscout}
+      POSTGRES_USER: ${POSTGRES_USER:-molscout}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-molscout}
+    volumes:
+      - molscout_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-molscout} -d ${POSTGRES_DB:-molscout}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   molscout:
     build:
       dockerfile: Dockerfile
@@ -7,8 +24,16 @@ services:
     container_name: molscout_app
     init: true
     restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       TZ: Asia/Tokyo
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB:-molscout}
+      PGUSER: ${POSTGRES_USER:-molscout}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-molscout}
     ports:
       - "8501:8501"
     deploy:
@@ -19,7 +44,10 @@ services:
               count: all
               capabilities: [gpu]
     volumes:
-      - ./app/data:/opt/MolScout/app/data
+      - ./data:/opt/MolScout/data
       #- ./app/.streamlit/:/opt/MolScout/app/.streamlit
       #- /etc/certificate:/etc/certificate
     command: ["streamlit", "run", "/opt/MolScout/app/streamlit_app.py"]
+
+volumes:
+  molscout_postgres:

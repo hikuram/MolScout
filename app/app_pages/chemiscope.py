@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from app_core.session_manager import list_jobs, session_dir
+from app_core.session_manager import get_job, get_session, session_dir
 from app_core.trajectory_viewer import (
     DEFAULT_MAX_FRAMES,
     build_chemiscope_dataset,
@@ -20,8 +19,8 @@ from app_core.trajectory_viewer import (
     trajectory_to_extxyz,
     viewer_key,
 )
-from app_ui.sidebar import get_selected_session
-from app_ui.views import file_size_label, format_app_time
+from app_ui.sidebar import database_selection
+from app_ui.views import file_size_label
 
 
 TRAJECTORY_FILTERS = (
@@ -58,63 +57,28 @@ def filter_files_for_jobs(files_df: pd.DataFrame, job_ids: list[str]) -> pd.Data
 
 
 st.markdown("## :material/animation: Chemiscope")
-st.caption("選択中セッションの trajectory / XYZ を chemiscope で確認します。")
+st.caption("Database sidebarで選択したジョブの trajectory / XYZ を chemiscope で確認します。")
 
-session = get_selected_session()
-if not session:
-    st.info("サイドバーからセッションを作成してください。")
+session_id, job_id = database_selection()
+if not session_id:
+    st.info("Database sidebarからSessionを選択してください。")
+    st.stop()
+if not job_id:
+    st.info("Database sidebarからTarget Jobを選択してください。")
     st.stop()
 
-session_id = session["session_id"]
+session = get_session(session_id)
+job = get_job(session_id, job_id)
+if not session or not job:
+    st.warning("選択したSessionまたはJobがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.stop()
+
 root = session_dir(session_id)
-jobs = list_jobs(session_id)
-
-st.markdown("#### Session jobs")
-st.caption(f"Directory to scan: `{root}`")
-
-if not jobs:
-    st.info("このセッションにはまだジョブがありません。")
-    st.stop()
-
-jobs_df = pd.DataFrame(jobs)
-for col in ["job_id", "workflow", "status", "created_at", "notes"]:
-    if col not in jobs_df.columns:
-        jobs_df[col] = ""
-
-display_jobs_df = jobs_df[["job_id", "workflow", "status", "created_at", "notes"]].copy()
-display_jobs_df["created_at"] = display_jobs_df["created_at"].map(format_app_time)
-
-job_id_signature = hashlib.sha1(
-    "|".join(display_jobs_df["job_id"].astype(str).tolist()).encode("utf-8")
-).hexdigest()[:12]
-selection_event = st.dataframe(
-    display_jobs_df,
-    hide_index=True,
-    on_select="rerun",
-    selection_mode="multi-row",
-    key=f"{session_id}_chemiscope_job_selection_{job_id_signature}",
-    height=250,
-    column_config={
-        "job_id": "Job ID",
-        "workflow": "Workflow",
-        "status": "Status",
-        "created_at": "Created",
-        "notes": "Notes",
-    },
+selected_job_ids = [job_id]
+st.caption(
+    f"Session `{session_id}` / Job `{job_id}` | "
+    f"{job.get('workflow') or job.get('name') or '-'} | {job.get('status') or '-'}"
 )
-
-raw_selected_indices = selection_event.selection.rows
-selected_indices = [
-    index
-    for index in raw_selected_indices
-    if isinstance(index, int) and 0 <= index < len(display_jobs_df)
-]
-
-if not selected_indices:
-    st.info("👆 trajectory を探すジョブを上のテーブルで 1 件以上選択してください。")
-    st.stop()
-
-selected_job_ids = display_jobs_df.iloc[selected_indices]["job_id"].astype(str).tolist()
 
 with st.container(border=True):
     top_cols = st.columns([1, 1, 1])

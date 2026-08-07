@@ -4,7 +4,7 @@
 
 MolScout は、共有 user interface と科学計算 workflow code を分離して管理します。
 
-- `app/` は Streamlit UI、queue management、session storage、worker control、monitoring、cleanup、archive utilities を含みます。
+- `app/` は Streamlit UI、PostgreSQL-backed queue/session metadata、worker control、monitoring、archive utilities を含みます。
 - `core/` は calculation workflow、calculator definitions、trajectory utilities、plotting helpers、PySCF export routines、configuration defaults、bundled sample structures を含みます。
 - `docs/` は architecture、workflow、backend、environment に関する notes を含みます。
 
@@ -12,7 +12,9 @@ MolScout は、共有 user interface と科学計算 workflow code を分離し�
 
 ## 2. Data-flow model
 
-MolScout は file-based handoff model を採用します。各 stage は、長時間保持される in-memory object を直接引き渡すのではなく、`.traj`、`.xyz`、`.csv`、`.json`、`.molden`、figures、logs などの標準 file を介して連携します。
+MolScout は metadata と calculation files を分離した hybrid persistence model を採用します。session、job、shared queue、application state は PostgreSQL に保存し、各 calculation stage は `.traj`、`.xyz`、`.csv`、`.json`、`.molden`、figures、logs などの標準 file を介して連携します。これらの実体ファイルは project root の `data/` 以下に保持します。
+
+検索価値の高い成果物については、file content を移動せず、`data/` からの relative path、file type、role、size、modified time、manifest 由来情報だけを PostgreSQL の artifact catalog に登録します。既存 file は再スキャン可能で、新規 job は terminal state への遷移時に自動登録されます。
 
 この設計には、以下の利点があります。
 
@@ -32,7 +34,7 @@ MolScout は file-based handoff model を採用します。各 stage は、長�
 
 ## 5. Logging and traceability
 
-各 run は、operational messages と configuration values を job output directory 内の `molscout.log` に記録します。app 側でも process stdout、queue metadata、runtime status、validation results を各 job directory に保存します。
+各 run は、operational messages と configuration values を job output directory 内の `molscout.log` に記録します。app 側では process stdout、runtime status、validation results を各 job directory に保存し、queue と job の管理 metadata は PostgreSQL に保存します。
 
 result CSV は主要な tabular output です。trajectory split、figures、JSON exports、Molden files などの追加 output は、対応する stage と backend が有効な場合に生成されます。
 

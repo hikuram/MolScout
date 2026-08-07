@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APP_DIR = PROJECT_ROOT / "app"
 CORE_DIR = PROJECT_ROOT / "core"
 
-DATA_DIR = APP_DIR / "data"
+DATA_DIR = PROJECT_ROOT / "data"
 SESSIONS_DIR = DATA_DIR / "sessions"
 QUEUE_DIR = DATA_DIR / "queue"
 ARCHIVES_DIR = DATA_DIR / "archives"
@@ -16,13 +16,9 @@ LOG_DIR = DATA_DIR / "logs"
 TEMP_DIR = DATA_DIR / "tmp"
 LOCK_DIR = DATA_DIR / "locks"
 
-APP_STATE_FILE = DATA_DIR / "app_state.json"
-QUEUE_FILE = QUEUE_DIR / "queue.json"
 WORKER_PID_FILE = QUEUE_DIR / "worker.pid"
 WORKER_LOG_FILE = LOG_DIR / "queue_worker.log"
 WORKER_LOCK_FILE = LOCK_DIR / "worker.lock"
-QUEUE_LOCK_FILE = LOCK_DIR / "queue.lock"
-STATE_LOCK_FILE = LOCK_DIR / "state.lock"
 
 RUNS_LEGACY_DIR = APP_DIR / "runs"
 UPLOADS_LEGACY_DIR = APP_DIR / "uploads"

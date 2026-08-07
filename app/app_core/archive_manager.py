@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import shutil
+import json
 import zipfile
 from collections import defaultdict
 from pathlib import Path
@@ -10,7 +10,15 @@ from pathlib import Path
 import pandas as pd
 
 from .paths import ARCHIVES_DIR
-from .session_manager import get_job, job_archive_path, job_dir, session_archive_path, session_dir
+from .session_manager import (
+    get_job,
+    get_session,
+    job_archive_path,
+    job_dir,
+    list_jobs,
+    session_archive_path,
+    session_dir,
+)
 
 MERGED_CSV_DIR = "MergedCSV"
 
@@ -64,6 +72,17 @@ def _add_tree(zip_file: zipfile.ZipFile, source: Path, archive_prefix: Path = Pa
             zip_file.write(path, (archive_prefix / path.relative_to(source)).as_posix())
 
 
+def _write_json_snapshot(zip_file: zipfile.ZipFile, archive_path: Path, payload: dict | None) -> None:
+    if not payload:
+        return
+    if archive_path.as_posix() in zip_file.namelist():
+        return
+    zip_file.writestr(
+        archive_path.as_posix(),
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+    )
+
+
 def _write_job_flat_archive(zip_file: zipfile.ZipFile, session_id: str, job_id: str, archive_prefix: Path = Path()) -> None:
     run_dir = _job_output_dir(session_id, job_id)
     _add_tree(zip_file, run_dir, archive_prefix)
@@ -74,7 +93,9 @@ def build_job_archive(session_id: str, job_id: str, *, flat: bool = False) -> Pa
         source = job_dir(session_id, job_id)
         target = job_archive_path(session_id, job_id)
         _reset_archive(target)
-        shutil.make_archive(str(target.with_suffix("")), "zip", root_dir=str(source))
+        with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+            _add_tree(zip_file, source)
+            _write_json_snapshot(zip_file, Path("job.json"), get_job(session_id, job_id))
         return target
 
     target = ARCHIVES_DIR / f"job-{_archive_name_part(session_id)}-{_archive_name_part(job_id)}-flat.zip"
@@ -87,10 +108,16 @@ def build_job_archive(session_id: str, job_id: str, *, flat: bool = False) -> Pa
 def build_session_archive(session_id: str) -> Path:
     source = session_dir(session_id)
     target = session_archive_path(session_id)
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists():
-        target.unlink()
-    shutil.make_archive(str(target.with_suffix("")), "zip", root_dir=str(source))
+    _reset_archive(target)
+    with zipfile.ZipFile(target, "w", compression=zipfile.ZIP_DEFLATED) as zip_file:
+        _add_tree(zip_file, source)
+        _write_json_snapshot(zip_file, Path("session.json"), get_session(session_id))
+        for job in list_jobs(session_id):
+            _write_json_snapshot(
+                zip_file,
+                Path("jobs") / str(job["job_id"]) / "job.json",
+                job,
+            )
     return target
 
 
@@ -256,6 +283,7 @@ def build_selected_jobs_archive(
                 _write_job_flat_archive(zip_file, session_id, job_id, prefix)
             else:
                 _add_tree(zip_file, job_dir(session_id, job_id), prefix)
+                _write_json_snapshot(zip_file, prefix / "job.json", get_job(session_id, job_id))
         if include_merged_csv:
             merged_payloads = _merged_csv_payloads(session_id, job_ids, flat=flat)
             for csv_name, payload in merged_payloads.items():

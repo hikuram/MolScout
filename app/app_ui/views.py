@@ -25,7 +25,6 @@ from app_core.archive_manager import (
     build_selected_jobs_archive,
     build_session_archive,
 )
-from app_core.cleanup_manager import run_cleanup
 from app_core.config import (
     DEFAULT_ALPB_SOLVENT,
     DEFAULT_ORBMOL_VERSION,
@@ -70,7 +69,6 @@ from app_core.session_manager import (
     session_dir,
     touch_session,
 )
-from app_core.storage import read_app_state, write_app_state
 from app_core.system_monitor import system_snapshot
 from app_core.utils import file_size_label, now_iso, safe_name, tail_text
 
@@ -689,17 +687,6 @@ def ensure_worker_running() -> None:
             stderr=subprocess.STDOUT,
             start_new_session=True,
         )
-
-
-def maybe_run_startup_cleanup() -> None:
-    state = read_app_state()
-    last_cleanup = state.get("last_cleanup_at")
-    if not last_cleanup:
-        run_cleanup()
-        return
-    last_date = last_cleanup[:10]
-    if last_date != now_iso()[:10]:
-        run_cleanup()
 
 
 def _first_available_import(module_names: list[str]) -> tuple[str | None, str | None]:
@@ -2277,52 +2264,63 @@ def cached_merged_csv_archive(
     return str(archive_path) if archive_path else None
 
 
-def render_job_detail(session_id: str, job: dict, jobs: list[dict], index: int) -> None:
-    meta = st.columns(5)
-    meta[0].metric("Status", job["status"])
-    meta[1].metric("Method", job.get("method", "-"))
-    meta[2].metric("Charge", job.get("charge", 0))
-    meta[3].metric("Created", format_app_time(job.get("created_at")))
-    meta[4].metric("Exit code", "-" if job.get("exit_code") is None else str(job["exit_code"]))
-    if job.get("completion_reason") or job.get("status_message"):
+def render_job_detail(
+    session_id: str,
+    job: dict,
+    jobs: list[dict],
+    index: int,
+    *,
+    show_summary: bool = True,
+) -> None:
+    if show_summary:
+        meta = st.columns(5)
+        meta[0].metric("Status", job["status"])
+        meta[1].metric("Method", job.get("method", "-"))
+        meta[2].metric("Charge", job.get("charge", 0))
+        meta[3].metric("Created", format_app_time(job.get("created_at")))
+        meta[4].metric(
+            "Exit code",
+            "-" if job.get("exit_code") is None else str(job["exit_code"]),
+        )
+        if job.get("completion_reason") or job.get("status_message"):
+            st.caption(
+                f"結果: {job.get('completion_reason') or '-'}"
+                + (f" | {job['status_message']}" if job.get("status_message") else "")
+            )
+
+        selected_steps = [
+            label
+            for key, label in [
+                ("initial_path", "Initial Path"),
+                ("ts_opt", "TS Opt"),
+                ("irc", "IRC"),
+                ("vib", "Vib & Thermo"),
+                ("refine", "Energy Refine"),
+            ]
+            if job.get("workflow_steps", {}).get(key)
+        ]
+        if selected_steps:
+            st.caption("Steps: " + ", ".join(selected_steps))
         st.caption(
-            f"結果: {job.get('completion_reason') or '-'}"
-            + (f" | {job['status_message']}" if job.get("status_message") else "")
+            f"Thermo temperature: {job.get('temperature', 298.15):.2f} K | "
+            f"Multiplicity: {job.get('mult', 1)} | "
+            f"TBLITE method: {job.get('tblite_method', 'hybrid')}"
+        )
+        overrides = job.get("config_overrides", {})
+        st.caption(
+            f"OrbMol version: {overrides.get('ORBMOL_VERSION', DEFAULT_ORBMOL_VERSION)} | "
+            f"ALPB solvent: {overrides.get('ALPB_SOLVENT', DEFAULT_ALPB_SOLVENT)} | "
+            f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', DEFAULT_TBLITE_ACCURACY)}"
+        )
+        st.caption(
+            f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
+            f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)} | "
+            f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
+            f"Initial path method: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
         )
 
-    selected_steps = [
-        label
-        for key, label in [
-            ("initial_path", "Initial Path"),
-            ("ts_opt", "TS Opt"),
-            ("irc", "IRC"),
-            ("vib", "Vib & Thermo"),
-            ("refine", "Energy Refine"),
-        ]
-        if job.get("workflow_steps", {}).get(key)
-    ]
-    if selected_steps:
-        st.caption("Steps: " + ", ".join(selected_steps))
-    st.caption(
-        f"Thermo temperature: {job.get('temperature', 298.15):.2f} K | "
-        f"Multiplicity: {job.get('mult', 1)} | "
-        f"TBLITE method: {job.get('tblite_method', 'hybrid')}"
-    )
-    overrides = job.get("config_overrides", {})
-    st.caption(
-        f"OrbMol version: {overrides.get('ORBMOL_VERSION', DEFAULT_ORBMOL_VERSION)} | "
-        f"ALPB solvent: {overrides.get('ALPB_SOLVENT', DEFAULT_ALPB_SOLVENT)} | "
-        f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', DEFAULT_TBLITE_ACCURACY)}"
-    )
-    st.caption(
-        f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
-        f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)} | "
-        f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
-        f"Initial path method: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
-    )
-
-    if job.get("notes"):
-        st.caption(job["notes"])
+        if job.get("notes"):
+            st.caption(job["notes"])
 
     action_shell = st.columns([1, 4], vertical_alignment="center")
     with action_shell[1]:

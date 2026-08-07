@@ -12,6 +12,7 @@ MolScout は、反応経路探索と後続の分子計算を自動化するた�
 - OrbMol、xTB/ALPB delta correction、PySCF、gpu4pyscf 支援計算に対応した calculator backend
 - `.traj`、`.xyz`、`.csv`、log、figure などによる file-based result handoff
 - 共有 workstation または remote server での実行を想定した Streamlit queue
+- PostgreSQL artifact catalog による session 横断の成果物検索と filesystem 整合性診断
 
 ## リポジトリ構成
 
@@ -20,6 +21,7 @@ MolScout/
 |-- app/                 # Streamlit UI、queue、session、archive 関連
 |-- core/                # 科学計算 workflow modules と sample input
 |-- docs/                # architecture、workflow、backend、environment notes
+|-- scripts/             # metadata migration / artifact catalog utilities
 |-- requirements.txt     # 非 Docker 環境向け Python dependencies
 `-- Dockerfile           # 推奨 environment definition
 ```
@@ -72,19 +74,31 @@ pip install -r requirements.txt
 
 ## Streamlit app の起動
 
-Docker image から起動する場合:
+PostgreSQL と Streamlit app は Compose で起動します。
 
 ```bash
-streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
+podman compose up -d --build
 ```
 
-依存関係を導入済みの local checkout から起動する場合:
+初回検証後は `.env` で `POSTGRES_PASSWORD` を設定し、Compose file の既定値をそのまま本運用に使用しないでください。
+
+session、job、queue、application state の管理情報は PostgreSQL に保存します。入力構造、trajectory、計算結果、logs、generated archives などの実体ファイルは project root の `data/` 以下に保存します。科学計算の default settings は `core/default_config.py` に保持され、job ごとの override は `app_core.workflow_runner` が適用します。`core/` 以下の source file は app から書き換えません。
+
+local checkout から直接起動する場合も、`PGHOST`、`PGDATABASE`、`PGUSER`、`PGPASSWORD` を設定し、接続可能な PostgreSQL を用意してください。
+
+### 既存成果物のカタログ登録
+
+成果物の実体は `data/` に維持し、検索に必要な file metadata だけを PostgreSQL の `artifacts` table に登録します。既存 data は次の単機能 script で登録できます。
 
 ```bash
-streamlit run app/streamlit_app.py
+podman compose exec molscout \
+  python /opt/MolScout/scripts/index_artifacts.py --dry-run
+
+podman compose exec molscout \
+  python /opt/MolScout/scripts/index_artifacts.py
 ```
 
-app は session data、queued jobs、logs、generated archives を `app/data/` 以下に書き込みます。科学計算の default settings は `core/default_config.py` に保持され、job ごとの override は `app_core.workflow_runner` が適用します。`core/` 以下の source file は app から書き換えません。
+新規 job は終了処理で自動登録されます。Streamlit の `Data` page から session 横断検索、手動再スキャン、欠損 file・未登録 file・孤立 directory の診断ができます。再スキャンと診断は file を削除または移動しません。
 
 ## core workflow の直接実行
 
