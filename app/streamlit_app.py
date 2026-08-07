@@ -36,7 +36,7 @@ def main() -> None:
         position="top",
     )
 
-    database_pages = {"Results", "Chemiscope", "Data", "About"}
+    database_pages = {"Results", "Chemiscope", "Data"}
     if page.title in database_pages:
         render_database_sidebar()
     else:
