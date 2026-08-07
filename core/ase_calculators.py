@@ -32,8 +32,8 @@ _VDZP_METHOD_SPECS = {
         "disp": "d4:b3lyp",
     },
     "b97-d3bj/vdzp": {
-        "xc": "b97",
-        "disp": "d3bj:b97",
+        "xc": "GGA_XC_B97_D",
+        "disp": "d3bj:b97d",
     },
     "wb97x-d4/vdzp": {
         # This is the general omegaB97X-D4/vDZP combination, not omegaB97X-3c.
@@ -327,6 +327,8 @@ def build_pyscf_3c(atoms, base_name, profile):
 
     config = {}
     config["xc"] = profile["xc"]
+    if "ecp" in profile:
+        config["ecp"] = profile["ecp"]
     config["charge"] = g.CHARGE
     config["spin"] = g.MULT - 1
     config["verbose"] = profile.get("verbose", 4)
@@ -335,7 +337,7 @@ def build_pyscf_3c(atoms, base_name, profile):
         (ele, coord) for ele, coord in zip(atoms.get_chemical_symbols(), atoms.get_positions())
     ]
     config["with_df"] = profile.get("with_df", True)
-    config["auxbasis"] = profile.get("auxbasis", "def2-universal-jkfit")
+    config["auxbasis"] = profile.get("auxbasis", "def2-universal-jfit")
     config["with_gpu"] = (g.DEVICE == "cuda")
 
     if profile.get("conv_tol") is not None:
