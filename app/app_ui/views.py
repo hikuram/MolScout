@@ -2264,52 +2264,63 @@ def cached_merged_csv_archive(
     return str(archive_path) if archive_path else None
 
 
-def render_job_detail(session_id: str, job: dict, jobs: list[dict], index: int) -> None:
-    meta = st.columns(5)
-    meta[0].metric("Status", job["status"])
-    meta[1].metric("Method", job.get("method", "-"))
-    meta[2].metric("Charge", job.get("charge", 0))
-    meta[3].metric("Created", format_app_time(job.get("created_at")))
-    meta[4].metric("Exit code", "-" if job.get("exit_code") is None else str(job["exit_code"]))
-    if job.get("completion_reason") or job.get("status_message"):
+def render_job_detail(
+    session_id: str,
+    job: dict,
+    jobs: list[dict],
+    index: int,
+    *,
+    show_summary: bool = True,
+) -> None:
+    if show_summary:
+        meta = st.columns(5)
+        meta[0].metric("Status", job["status"])
+        meta[1].metric("Method", job.get("method", "-"))
+        meta[2].metric("Charge", job.get("charge", 0))
+        meta[3].metric("Created", format_app_time(job.get("created_at")))
+        meta[4].metric(
+            "Exit code",
+            "-" if job.get("exit_code") is None else str(job["exit_code"]),
+        )
+        if job.get("completion_reason") or job.get("status_message"):
+            st.caption(
+                f"結果: {job.get('completion_reason') or '-'}"
+                + (f" | {job['status_message']}" if job.get("status_message") else "")
+            )
+
+        selected_steps = [
+            label
+            for key, label in [
+                ("initial_path", "Initial Path"),
+                ("ts_opt", "TS Opt"),
+                ("irc", "IRC"),
+                ("vib", "Vib & Thermo"),
+                ("refine", "Energy Refine"),
+            ]
+            if job.get("workflow_steps", {}).get(key)
+        ]
+        if selected_steps:
+            st.caption("Steps: " + ", ".join(selected_steps))
         st.caption(
-            f"結果: {job.get('completion_reason') or '-'}"
-            + (f" | {job['status_message']}" if job.get("status_message") else "")
+            f"Thermo temperature: {job.get('temperature', 298.15):.2f} K | "
+            f"Multiplicity: {job.get('mult', 1)} | "
+            f"TBLITE method: {job.get('tblite_method', 'hybrid')}"
+        )
+        overrides = job.get("config_overrides", {})
+        st.caption(
+            f"OrbMol version: {overrides.get('ORBMOL_VERSION', DEFAULT_ORBMOL_VERSION)} | "
+            f"ALPB solvent: {overrides.get('ALPB_SOLVENT', DEFAULT_ALPB_SOLVENT)} | "
+            f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', DEFAULT_TBLITE_ACCURACY)}"
+        )
+        st.caption(
+            f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
+            f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)} | "
+            f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
+            f"Initial path method: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
         )
 
-    selected_steps = [
-        label
-        for key, label in [
-            ("initial_path", "Initial Path"),
-            ("ts_opt", "TS Opt"),
-            ("irc", "IRC"),
-            ("vib", "Vib & Thermo"),
-            ("refine", "Energy Refine"),
-        ]
-        if job.get("workflow_steps", {}).get(key)
-    ]
-    if selected_steps:
-        st.caption("Steps: " + ", ".join(selected_steps))
-    st.caption(
-        f"Thermo temperature: {job.get('temperature', 298.15):.2f} K | "
-        f"Multiplicity: {job.get('mult', 1)} | "
-        f"TBLITE method: {job.get('tblite_method', 'hybrid')}"
-    )
-    overrides = job.get("config_overrides", {})
-    st.caption(
-        f"OrbMol version: {overrides.get('ORBMOL_VERSION', DEFAULT_ORBMOL_VERSION)} | "
-        f"ALPB solvent: {overrides.get('ALPB_SOLVENT', DEFAULT_ALPB_SOLVENT)} | "
-        f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', DEFAULT_TBLITE_ACCURACY)}"
-    )
-    st.caption(
-        f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
-        f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)} | "
-        f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
-        f"Initial path method: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
-    )
-
-    if job.get("notes"):
-        st.caption(job["notes"])
+        if job.get("notes"):
+            st.caption(job["notes"])
 
     action_shell = st.columns([1, 4], vertical_alignment="center")
     with action_shell[1]:

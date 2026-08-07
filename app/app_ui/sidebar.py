@@ -331,6 +331,23 @@ def render_database_sidebar() -> dict | None:
                 )
 
                 if selected_job:
+                    st.markdown("**Session Jobs**")
+                    job_rows = [
+                        {
+                            "Job": str(item.get("job_id") or "-"),
+                            "Workflow": str(item.get("workflow") or item.get("name") or "-"),
+                            "Status": str(item.get("status") or "-"),
+                        }
+                        for item in jobs
+                    ]
+                    st.dataframe(
+                        job_rows,
+                        hide_index=True,
+                        width="stretch",
+                        height=min(210, 36 + 35 * len(job_rows)),
+                    )
+
+                    st.markdown("**Target Summary**")
                     cols = st.columns(2)
                     cols[0].metric("Status", selected_job.get("status") or "-")
                     cols[1].metric(
@@ -339,7 +356,65 @@ def render_database_sidebar() -> dict | None:
                     )
                     workflow = selected_job.get("workflow") or selected_job.get("name") or "-"
                     method = selected_job.get("method") or "-"
-                    st.caption(f"{workflow} | {method}")
+                    st.caption(f"Workflow: {workflow}")
+                    st.caption(f"Method: {method}")
+                    st.caption(
+                        f"Charge: {selected_job.get('charge', 0)} | "
+                        f"Multiplicity: {selected_job.get('mult', 1)}"
+                    )
+                    st.caption(
+                        f"Created: {format_app_time(selected_job.get('created_at'))} | "
+                        f"Exit: {'-' if selected_job.get('exit_code') is None else selected_job.get('exit_code')}"
+                    )
+                    selected_steps = [
+                        label
+                        for key, label in [
+                            ("initial_path", "Initial Path"),
+                            ("ts_opt", "TS Opt"),
+                            ("irc", "IRC"),
+                            ("vib", "Vib & Thermo"),
+                            ("refine", "Energy Refine"),
+                        ]
+                        if selected_job.get("workflow_steps", {}).get(key)
+                    ]
+                    if selected_steps:
+                        st.caption("Steps: " + ", ".join(selected_steps))
+
+                    with st.expander("Run Settings", expanded=False):
+                        st.caption(
+                            f"Temperature: {selected_job.get('temperature', 298.15):.2f} K"
+                        )
+                        st.caption(
+                            f"TBLITE: {selected_job.get('tblite_method', 'hybrid')}"
+                        )
+                        overrides = selected_job.get("config_overrides", {})
+                        st.caption(
+                            f"OrbMol: {overrides.get('ORBMOL_VERSION', '-')} | "
+                            f"ALPB: {overrides.get('ALPB_SOLVENT', '-')}"
+                        )
+                        st.caption(
+                            f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', '-')}"
+                        )
+                        st.caption(
+                            f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
+                            f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)}"
+                        )
+                        st.caption(
+                            f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
+                            f"Initial path: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
+                        )
+                        if selected_job.get("notes"):
+                            st.caption(f"Notes: {selected_job.get('notes')}")
+
+                    if selected_job.get("completion_reason") or selected_job.get("status_message"):
+                        st.caption(
+                            f"Result: {selected_job.get('completion_reason') or '-'}"
+                            + (
+                                f" | {selected_job.get('status_message')}"
+                                if selected_job.get("status_message")
+                                else ""
+                            )
+                        )
             else:
                 st.session_state.pop(DB_SELECTED_JOB_STATE_KEY, None)
                 st.session_state.pop(DB_JOB_SELECTOR_WIDGET_KEY, None)

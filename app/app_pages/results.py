@@ -36,8 +36,4 @@ if job_index is None:
     job_index = len(jobs) - 1
 
 st.caption(f"Session `{session_id}` / Job `{job_id}`")
-st.markdown(
-    f"#### :material/visibility: {job['job_id']} | "
-    f"{job.get('workflow') or job.get('name') or '-'} | {job.get('status') or '-'}"
-)
-render_job_detail(session_id, job, jobs, job_index)
+render_job_detail(session_id, job, jobs, job_index, show_summary=False)
