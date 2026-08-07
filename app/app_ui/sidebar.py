@@ -256,6 +256,12 @@ def database_selection() -> tuple[str, str]:
     )
 
 
+def set_database_selection(session_id: str, job_id: str = "") -> None:
+    """Set the database browsing target without changing the queue session."""
+    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = str(session_id or "")
+    st.session_state[DB_SELECTED_JOB_STATE_KEY] = str(job_id or "")
+
+
 def render_database_sidebar() -> dict | None:
     """Render database browsing context without changing the queue session."""
     sessions = list_sessions()

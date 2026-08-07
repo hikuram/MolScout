@@ -18,7 +18,7 @@ from app_core.database import (
     search_artifact_records,
 )
 from app_core.session_manager import get_job, list_sessions
-from app_ui.sidebar import database_selection
+from app_ui.sidebar import database_selection, set_database_selection
 from app_ui.views import format_app_time
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -146,15 +146,35 @@ def render_catalog() -> None:
         }
         for item in records
     ]
-    st.dataframe(table_rows, hide_index=True, width="stretch", height=460)
+    selection = st.dataframe(
+        table_rows,
+        hide_index=True,
+        width="stretch",
+        height=460,
+        on_select="rerun",
+        selection_mode="single-row",
+        key="artifact_catalog_search_results",
+    )
 
     if not records:
         return
 
+    path_options = [item["relative_path"] for item in records]
+    selected_rows = [
+        index
+        for index in selection.selection.rows
+        if isinstance(index, int) and 0 <= index < len(records)
+    ]
+    if selected_rows:
+        st.session_state["artifact_catalog_selected_path"] = records[selected_rows[0]]["relative_path"]
+    if st.session_state.get("artifact_catalog_selected_path") not in path_options:
+        st.session_state["artifact_catalog_selected_path"] = path_options[0]
+
     st.markdown("### :material/draft: ファイル詳細")
     selected_path = st.selectbox(
         "対象ファイル",
-        [item["relative_path"] for item in records],
+        path_options,
+        key="artifact_catalog_selected_path",
         format_func=lambda value: value,
     )
     selected = next(item for item in records if item["relative_path"] == selected_path)
@@ -164,6 +184,26 @@ def render_catalog() -> None:
     cols[2].metric("File Size", format_bytes(selected["size_bytes"]))
     cols[3].metric("Status", selected["availability_status"])
     st.code(selected["relative_path"], language="text")
+
+    target_job_id = str(selected.get("job_id") or "")
+    if target_job_id:
+        action_cols = st.columns(2)
+        if action_cols[0].button(
+            ":material/monitoring: Open Job in Results",
+            width="stretch",
+            key="artifact_open_results",
+        ):
+            set_database_selection(str(selected["session_id"]), target_job_id)
+            st.switch_page("app_pages/results.py")
+        if action_cols[1].button(
+            ":material/animation: Open Job in Chemiscope",
+            width="stretch",
+            key="artifact_open_chemiscope",
+        ):
+            set_database_selection(str(selected["session_id"]), target_job_id)
+            st.switch_page("app_pages/chemiscope.py")
+    else:
+        st.caption("この成果物にはJob IDがないため、Results / Chemiscopeへの導線はありません。")
 
     metadata = selected.get("metadata") or {}
     if metadata:
