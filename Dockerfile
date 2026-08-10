@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUPY_ACCELERATORS="cutensor,cub" \
     LD_LIBRARY_PATH="/opt/hpcx/ucx/lib:/opt/hpcx/ucc/lib:${LD_LIBRARY_PATH}"
 
-ARG GPU4PYSCF_REF=v1.8.0
+ARG GPU4PYSCF_REF=v1.8.1
 
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
         | debconf-set-selections \
