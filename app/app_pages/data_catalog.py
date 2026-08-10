@@ -18,7 +18,10 @@ from app_core.database import (
     search_artifact_records,
 )
 from app_core.session_manager import list_sessions
-from app_ui.sidebar import set_database_selection
+from app_ui.sidebar import (
+    database_page_url,
+    set_database_multi_selection,
+)
 from app_ui.views import format_app_time
 
 MAX_DOWNLOAD_BYTES = 50 * 1024 * 1024
@@ -124,7 +127,7 @@ def render_catalog() -> None:
         width="stretch",
         height=460,
         on_select="rerun",
-        selection_mode="single-row",
+        selection_mode="multi-row",
         key="artifact_catalog_search_results",
     )
 
@@ -141,6 +144,78 @@ def render_catalog() -> None:
         st.session_state["artifact_catalog_selected_path"] = records[selected_rows[0]]["relative_path"]
     if st.session_state.get("artifact_catalog_selected_path") not in path_options:
         st.session_state["artifact_catalog_selected_path"] = path_options[0]
+
+    selected_jobs: list[dict] = []
+    seen_jobs: set[tuple[str, str]] = set()
+    for index in selected_rows:
+        item = records[index]
+        session_id = str(item.get("session_id") or "")
+        job_id = str(item.get("job_id") or "")
+        key = (session_id, job_id)
+        if not session_id or not job_id or key in seen_jobs:
+            continue
+        seen_jobs.add(key)
+        selected_jobs.append(item)
+
+    if selected_rows:
+        st.caption(
+            f"Selected artifacts: {len(selected_rows)} | Selected jobs: {len(selected_jobs)}"
+        )
+
+    if selected_jobs:
+        st.markdown("### :material/open_in_new: Selected Jobs")
+        st.caption("Each link opens in a new browser tab with an independent Database context.")
+        for index, item in enumerate(selected_jobs):
+            session_id = str(item.get("session_id") or "")
+            job_id = str(item.get("job_id") or "")
+            info_col, results_col, chemiscope_col = st.columns([2.4, 1, 1])
+            info_col.markdown(
+                f"`{job_id}`  \n{session_id} | {item.get('workflow') or '-'} | {item.get('job_status') or '-'}"
+            )
+            results_url = database_page_url("results", session_id, job_id)
+            chemiscope_url = database_page_url("chemiscope", session_id, job_id)
+            if results_url:
+                results_col.link_button(
+                    "Results",
+                    results_url,
+                    icon=":material/open_in_new:",
+                    width="stretch",
+                )
+            else:
+                results_col.button(
+                    "Results",
+                    disabled=True,
+                    width="stretch",
+                    key=f"artifact_results_link_unavailable_{index}",
+                )
+            if chemiscope_url:
+                chemiscope_col.link_button(
+                    "Chemiscope",
+                    chemiscope_url,
+                    icon=":material/open_in_new:",
+                    width="stretch",
+                )
+            else:
+                chemiscope_col.button(
+                    "Chemiscope",
+                    disabled=True,
+                    width="stretch",
+                    key=f"artifact_chemiscope_link_unavailable_{index}",
+                )
+
+        selected_sessions = {str(item.get("session_id") or "") for item in selected_jobs}
+        if len(selected_sessions) == 1:
+            archive_session_id = next(iter(selected_sessions))
+            archive_job_ids = [str(item.get("job_id") or "") for item in selected_jobs]
+            if st.button(
+                ":material/folder_zip: Use selected jobs in sidebar ZIP",
+                width="stretch",
+                key="artifact_use_selected_jobs_for_archive",
+            ):
+                set_database_multi_selection(archive_session_id, archive_job_ids)
+                st.rerun()
+        else:
+            st.caption("Sidebar ZIP selection is session-scoped; selected jobs span multiple sessions.")
 
     st.markdown("### :material/draft: ファイル詳細")
     selected_path = st.selectbox(
@@ -159,21 +234,26 @@ def render_catalog() -> None:
 
     target_job_id = str(selected.get("job_id") or "")
     if target_job_id:
+        target_session_id = str(selected.get("session_id") or "")
+        results_url = database_page_url("results", target_session_id, target_job_id)
+        chemiscope_url = database_page_url("chemiscope", target_session_id, target_job_id)
         action_cols = st.columns(2)
-        if action_cols[0].button(
-            ":material/monitoring: Open Job in Results",
-            width="stretch",
-            key="artifact_open_results",
-        ):
-            set_database_selection(str(selected["session_id"]), target_job_id)
-            st.switch_page("app_pages/results.py")
-        if action_cols[1].button(
-            ":material/animation: Open Job in Chemiscope",
-            width="stretch",
-            key="artifact_open_chemiscope",
-        ):
-            set_database_selection(str(selected["session_id"]), target_job_id)
-            st.switch_page("app_pages/chemiscope.py")
+        if results_url:
+            action_cols[0].link_button(
+                "Open Job in Results",
+                results_url,
+                icon=":material/open_in_new:",
+                width="stretch",
+            )
+        if chemiscope_url:
+            action_cols[1].link_button(
+                "Open Job in Chemiscope",
+                chemiscope_url,
+                icon=":material/open_in_new:",
+                width="stretch",
+            )
+        if not results_url or not chemiscope_url:
+            st.caption("New-tab links are unavailable because the current app URL could not be resolved.")
     else:
         st.caption("この成果物にはJob IDがないため、Results / Chemiscopeへの導線はありません。")
 
@@ -264,7 +344,6 @@ def render_maintenance() -> None:
         st.json(report["issue_counts"])
 
 
-st.set_page_config(page_title="MolScout [Data]")
 st.markdown("## :material/database: Data Catalog")
 st.caption("全セッションの成果物を検索し、PostgreSQLの登録情報とdataディレクトリの整合性を確認します。")
 
