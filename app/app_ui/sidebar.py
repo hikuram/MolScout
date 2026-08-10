@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from urllib.parse import urlencode, urlsplit, urlunsplit
+
 import streamlit as st
 
 from app_core.paths import WORKER_LOG_FILE
@@ -13,6 +16,7 @@ from app_ui.views import (
     format_worker_log_time,
     list_sample_cases,
     sidebar_monitor_fragment,
+    cached_selected_jobs_archive,
 )
 
 SELECTED_SESSION_STATE_KEY = "selected_session_id"
@@ -26,6 +30,16 @@ DB_SESSION_SELECTOR_WIDGET_KEY = "database_session_selector_id"
 DB_SELECTED_JOB_STATE_KEY = "database_selected_job_id"
 DB_JOB_SELECTOR_WIDGET_KEY = "database_job_selector_id"
 DB_REFRESH_GENERATION_STATE_KEY = "database_refresh_generation"
+DB_SESSION_QUERY_PARAM_KEY = "db_session"
+DB_JOB_QUERY_PARAM_KEY = "db_job"
+DB_QUERY_TARGET_APPLIED_STATE_KEY = "database_query_target_applied"
+DB_MULTI_JOB_MODE_STATE_KEY = "database_multi_job_mode"
+DB_MULTI_JOB_MODE_WIDGET_KEY = "database_multi_job_mode_widget"
+DB_SELECTED_JOB_IDS_STATE_KEY = "database_selected_job_ids"
+DB_SELECTED_JOB_IDS_WIDGET_KEY = "database_selected_job_ids_widget"
+DB_ARCHIVE_FLAT_STATE_KEY = "database_archive_flat"
+DB_ARCHIVE_MERGED_STATE_KEY = "database_archive_merged_csv"
+DB_PENDING_MULTI_SELECTION_STATE_KEY = "database_pending_multi_selection"
 
 
 def current_query_session_id() -> str:
@@ -209,6 +223,69 @@ def render_session_sidebar() -> dict | None:
         return session
 
 
+def _query_param_text(key: str) -> str:
+    raw_value = st.query_params.get(key)
+    if isinstance(raw_value, list):
+        raw_value = raw_value[0] if raw_value else ""
+    return str(raw_value or "")
+
+
+def _persist_database_query_target(session_id: str, job_id: str = "") -> None:
+    if session_id:
+        st.query_params[DB_SESSION_QUERY_PARAM_KEY] = session_id
+    else:
+        st.query_params.pop(DB_SESSION_QUERY_PARAM_KEY, None)
+    if job_id:
+        st.query_params[DB_JOB_QUERY_PARAM_KEY] = job_id
+    else:
+        st.query_params.pop(DB_JOB_QUERY_PARAM_KEY, None)
+
+
+def _apply_database_query_target(sessions: list[dict]) -> None:
+    session_id = _query_param_text(DB_SESSION_QUERY_PARAM_KEY)
+    job_id = _query_param_text(DB_JOB_QUERY_PARAM_KEY)
+    token = f"{session_id}|{job_id}"
+    if token == str(st.session_state.get(DB_QUERY_TARGET_APPLIED_STATE_KEY) or ""):
+        return
+
+    session_ids = {str(item.get("session_id") or "") for item in sessions}
+    if session_id in session_ids:
+        jobs = list_jobs(session_id)
+        job_ids = {str(item.get("job_id") or "") for item in jobs}
+        st.session_state[DB_SELECTED_SESSION_STATE_KEY] = session_id
+        st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = session_id
+        if job_id in job_ids:
+            st.session_state[DB_SELECTED_JOB_STATE_KEY] = job_id
+            st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = job_id
+
+    st.session_state[DB_QUERY_TARGET_APPLIED_STATE_KEY] = token
+
+
+def database_page_url(page_path: str, session_id: str, job_id: str) -> str:
+    """Build an absolute database deep link that opens in a new browser tab."""
+    try:
+        current_url = str(st.context.url or "")
+    except Exception:
+        return ""
+    if not current_url:
+        return ""
+
+    parsed = urlsplit(current_url)
+    current_path = parsed.path.rstrip("/")
+    if "/" in current_path:
+        root_path = current_path.rsplit("/", 1)[0]
+    else:
+        root_path = ""
+    target_path = f"{root_path}/{page_path.lstrip('/')}"
+    query = urlencode(
+        {
+            DB_SESSION_QUERY_PARAM_KEY: str(session_id),
+            DB_JOB_QUERY_PARAM_KEY: str(job_id),
+        }
+    )
+    return urlunsplit((parsed.scheme, parsed.netloc, target_path, query, ""))
+
+
 def _resolve_database_session_id(sessions: list[dict]) -> str:
     session_ids = [str(item["session_id"]) for item in sessions]
     selected = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
@@ -228,6 +305,9 @@ def _sync_database_session_from_widget() -> None:
         return
     st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = ""
+    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = []
+    st.session_state.pop(DB_SELECTED_JOB_IDS_WIDGET_KEY, None)
+    _persist_database_query_target(selected)
 
 
 def _resolve_database_job_id(jobs: list[dict]) -> str:
@@ -246,6 +326,8 @@ def _sync_database_job_from_widget() -> None:
     selected = str(st.session_state.get(DB_JOB_SELECTOR_WIDGET_KEY) or "")
     if selected:
         st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected
+        session_id = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
+        _persist_database_query_target(session_id, selected)
 
 
 def database_selection() -> tuple[str, str]:
@@ -260,11 +342,162 @@ def set_database_selection(session_id: str, job_id: str = "") -> None:
     """Set the database browsing target without changing the queue session."""
     st.session_state[DB_SELECTED_SESSION_STATE_KEY] = str(session_id or "")
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = str(job_id or "")
+    _persist_database_query_target(str(session_id or ""), str(job_id or ""))
+
+
+def set_database_multi_selection(session_id: str, job_ids: list[str]) -> None:
+    """Queue a multi-job archive selection for the next sidebar render."""
+    normalized = [str(job_id) for job_id in job_ids if str(job_id)]
+    st.session_state[DB_PENDING_MULTI_SELECTION_STATE_KEY] = {
+        "session_id": str(session_id or ""),
+        "job_ids": normalized,
+    }
+
+
+def _apply_pending_database_multi_selection(sessions: list[dict]) -> None:
+    pending = st.session_state.pop(DB_PENDING_MULTI_SELECTION_STATE_KEY, None)
+    if not isinstance(pending, dict):
+        return
+
+    session_id = str(pending.get("session_id") or "")
+    requested_job_ids = [str(job_id) for job_id in pending.get("job_ids", []) if str(job_id)]
+    session_ids = {str(item.get("session_id") or "") for item in sessions}
+    if session_id not in session_ids:
+        return
+
+    jobs = list_jobs(session_id)
+    available_job_ids = [str(item.get("job_id") or "") for item in jobs]
+    selected_job_ids = [job_id for job_id in requested_job_ids if job_id in available_job_ids]
+    if not selected_job_ids:
+        return
+
+    active_job_id = selected_job_ids[0]
+    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = session_id
+    st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = session_id
+    st.session_state[DB_SELECTED_JOB_STATE_KEY] = active_job_id
+    st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = active_job_id
+    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = True
+    st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = True
+    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
+    st.session_state[DB_SELECTED_JOB_IDS_WIDGET_KEY] = selected_job_ids
+    _persist_database_query_target(session_id, active_job_id)
+
+
+def _archive_signature(jobs: list[dict], job_ids: tuple[str, ...]) -> tuple[tuple[str, str, str], ...]:
+    selected = set(job_ids)
+    return tuple(
+        (
+            str(job.get("job_id") or ""),
+            str(job.get("status") or ""),
+            str(job.get("updated_at") or job.get("finished_at") or job.get("created_at") or ""),
+        )
+        for job in jobs
+        if str(job.get("job_id") or "") in selected
+    )
+
+
+def _render_multi_job_archive(session_id: str, jobs: list[dict], active_job_id: str) -> None:
+    st.session_state.setdefault(
+        DB_MULTI_JOB_MODE_WIDGET_KEY,
+        bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False)),
+    )
+    enabled = st.toggle(
+        "Select multiple jobs",
+        key=DB_MULTI_JOB_MODE_WIDGET_KEY,
+    )
+    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = bool(enabled)
+    if not enabled:
+        return
+
+    job_ids = [str(item.get("job_id") or "") for item in jobs]
+    state_selected = [
+        str(job_id)
+        for job_id in st.session_state.get(DB_SELECTED_JOB_IDS_STATE_KEY, [])
+        if str(job_id) in job_ids
+    ]
+    widget_selected = [
+        str(job_id)
+        for job_id in st.session_state.get(DB_SELECTED_JOB_IDS_WIDGET_KEY, [])
+        if str(job_id) in job_ids
+    ]
+    if DB_SELECTED_JOB_IDS_WIDGET_KEY in st.session_state:
+        selected = widget_selected
+    else:
+        selected = state_selected
+        if not selected and active_job_id in job_ids:
+            selected = [active_job_id]
+        st.session_state[DB_SELECTED_JOB_IDS_WIDGET_KEY] = selected
+
+    selected_ids = st.multiselect(
+        "Jobs for ZIP",
+        options=job_ids,
+        key=DB_SELECTED_JOB_IDS_WIDGET_KEY,
+        format_func=lambda job_id: next(
+            (
+                f"{item.get('job_id')} | {item.get('status') or '-'}"
+                for item in jobs
+                if str(item.get("job_id") or "") == job_id
+            ),
+            job_id,
+        ),
+    )
+    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = list(selected_ids)
+    if not selected_ids:
+        st.caption("Select at least one job.")
+        return
+
+    with st.expander("Archive options", expanded=False):
+        st.session_state.setdefault(DB_ARCHIVE_FLAT_STATE_KEY, True)
+        st.session_state.setdefault(DB_ARCHIVE_MERGED_STATE_KEY, True)
+        flat = st.toggle("Flat ZIP", key=DB_ARCHIVE_FLAT_STATE_KEY)
+        merged = st.toggle(
+            "Include merged CSV",
+            key=DB_ARCHIVE_MERGED_STATE_KEY,
+        )
+
+    selected_tuple = tuple(selected_ids)
+    state_key = (
+        "database_selected_jobs_archive::"
+        + session_id
+        + "::"
+        + "|".join(selected_tuple)
+        + f"::{int(bool(flat))}:{int(bool(merged))}"
+    )
+    if st.button(
+        ":material/folder_zip: Generate ZIP",
+        width="stretch",
+        key="database_generate_selected_jobs_zip",
+    ):
+        with st.spinner("Building ZIP..."):
+            archive_path = cached_selected_jobs_archive(
+                session_id,
+                selected_tuple,
+                bool(flat),
+                bool(merged),
+                _archive_signature(jobs, selected_tuple),
+            )
+        st.session_state[state_key] = archive_path
+
+    archive_raw = st.session_state.get(state_key)
+    archive_path = Path(str(archive_raw)) if archive_raw else None
+    if archive_path and archive_path.exists():
+        st.download_button(
+            ":material/download: Download ZIP",
+            data=archive_path.read_bytes(),
+            file_name=archive_path.name,
+            mime="application/zip",
+            width="stretch",
+            key="database_download_selected_jobs_zip",
+        )
+
+
 
 
 def render_database_sidebar() -> dict | None:
     """Render database browsing context without changing the queue session."""
     sessions = list_sessions()
+    _apply_database_query_target(sessions)
+    _apply_pending_database_multi_selection(sessions)
 
     with st.sidebar:
         with st.container(border=True):
@@ -325,12 +558,15 @@ def render_database_sidebar() -> dict | None:
                     on_change=_sync_database_job_from_widget,
                 )
                 st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected_job_id
+                _persist_database_query_target(selected_session_id, selected_job_id)
                 selected_job = next(
                     (item for item in jobs if str(item["job_id"]) == selected_job_id),
                     None,
                 )
 
                 if selected_job:
+                    _render_multi_job_archive(selected_session_id, jobs, selected_job_id)
+
                     st.markdown("**Session Jobs**")
                     job_rows = [
                         {
