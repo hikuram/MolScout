@@ -344,6 +344,7 @@ def render_maintenance() -> None:
         st.json(report["issue_counts"])
 
 
+st.set_page_config(page_title="MolScout [Data]")
 st.markdown("## :material/database: Data Catalog")
 st.caption("全セッションの成果物を検索し、PostgreSQLの登録情報とdataディレクトリの整合性を確認します。")
 
