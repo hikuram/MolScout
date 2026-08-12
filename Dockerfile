@@ -39,8 +39,8 @@ RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
 
 # CUDA libraries used by GPU4PySCF.
 RUN python3 -m pip install --no-cache-dir \
-        "cupy-cuda13x==13.6.0" \
-        "cutensor-cu13==2.3.*"
+        "cupy-cuda13x==14.1.1" \
+        "cutensor-cu13==2.7.0"
 
 # Make the cuTENSOR wheel library available to the system linker.
 RUN SITE_PACKAGES="$(python3 -c \
