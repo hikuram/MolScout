@@ -2212,6 +2212,7 @@ def render_queue_panel() -> None:
                     "status": job["status"],
                     "workflow": job["workflow"],
                     "owner": job.get("owner_label", "anonymous"),
+                    "job note": job.get("notes", ""),
                     "created_at": format_app_time(job.get("created_at", "")),
                 }
             )
@@ -3631,7 +3632,7 @@ def render_session_jobs(session: dict) -> None:
             "workflow": "Workflow",
             "status": "Status",
             "created_at": "Created",
-            "notes": "Notes",
+            "notes": "Job Note",
         }
     )
 

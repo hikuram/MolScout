@@ -67,7 +67,7 @@ def render_catalog() -> None:
     row1 = st.columns([2.5, 1.5, 1.3])
     search_text = row1[0].text_input(
         "検索",
-        placeholder="ファイル名、パス、ジョブ名、workflow、method、owner",
+        placeholder="ファイル名、パス、ジョブ名、job note、workflow、method、owner",
     )
     selected_session = row1[1].selectbox(
         "セッション",
@@ -110,6 +110,7 @@ def render_catalog() -> None:
             "session": item["session_id"],
             "job": item.get("job_id") or "-",
             "status": item.get("job_status") or "-",
+            "Job Note": item.get("job_notes") or "",
             "workflow": item.get("workflow") or "-",
             "method": item.get("method") or "-",
             "type": item["artifact_type"],
@@ -169,8 +170,10 @@ def render_catalog() -> None:
             session_id = str(item.get("session_id") or "")
             job_id = str(item.get("job_id") or "")
             info_col, results_col, chemiscope_col = st.columns([2.4, 1, 1])
+            note = str(item.get("job_notes") or "")
             info_col.markdown(
                 f"`{job_id}`  \n{session_id} | {item.get('workflow') or '-'} | {item.get('job_status') or '-'}"
+                + (f"  \nJob Note: {note}" if note else "")
             )
             results_url = database_page_url("results", session_id, job_id)
             chemiscope_url = database_page_url("chemiscope", session_id, job_id)
@@ -208,14 +211,14 @@ def render_catalog() -> None:
             archive_session_id = next(iter(selected_sessions))
             archive_job_ids = [str(item.get("job_id") or "") for item in selected_jobs]
             if st.button(
-                ":material/folder_zip: Use selected jobs in sidebar ZIP",
+                ":material/checklist: Select jobs in sidebar",
                 width="stretch",
                 key="artifact_use_selected_jobs_for_archive",
             ):
                 set_database_multi_selection(archive_session_id, archive_job_ids)
                 st.rerun()
         else:
-            st.caption("Sidebar ZIP selection is session-scoped; selected jobs span multiple sessions.")
+            st.caption("Sidebar job selection is session-scoped; selected jobs span multiple sessions.")
 
     st.markdown("### :material/draft: ファイル詳細")
     selected_path = st.selectbox(

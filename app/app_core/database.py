@@ -422,11 +422,12 @@ def search_artifact_records(
                 COALESCE(j.payload->>'name', '') ILIKE %s OR
                 COALESCE(j.payload->>'workflow', '') ILIKE %s OR
                 COALESCE(j.payload->>'method', '') ILIKE %s OR
+                COALESCE(j.payload->>'notes', '') ILIKE %s OR
                 COALESCE(s.payload->>'owner_label', '') ILIKE %s
             )
             """
         )
-        params.extend([pattern] * 8)
+        params.extend([pattern] * 9)
     if session_id:
         where.append("a.session_id = %s")
         params.append(session_id)
@@ -464,6 +465,7 @@ def search_artifact_records(
             COALESCE(j.payload->>'workflow', '') AS workflow,
             COALESCE(j.payload->>'method', '') AS method,
             COALESCE(j.payload->>'status', '') AS job_status,
+            COALESCE(j.payload->>'notes', '') AS job_notes,
             COALESCE(j.payload->>'finished_at', '') AS finished_at
         FROM artifacts a
         JOIN sessions s ON s.session_id = a.session_id
@@ -490,6 +492,7 @@ def search_artifact_records(
         "workflow",
         "method",
         "job_status",
+        "job_notes",
         "finished_at",
     )
     ensure_database()

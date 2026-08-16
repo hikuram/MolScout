@@ -19,7 +19,7 @@ from app_core.trajectory_viewer import (
     trajectory_to_extxyz,
     viewer_key,
 )
-from app_ui.sidebar import database_selection
+from app_ui.sidebar import database_job_selection, database_selection
 from app_ui.views import file_size_label
 
 
@@ -60,26 +60,53 @@ st.set_page_config(page_title="MolScout [Chemiscope]")
 st.markdown("## :material/animation: Chemiscope")
 st.caption("Database sidebarで選択したジョブの trajectory / XYZ を chemiscope で確認します。")
 
-session_id, job_id = database_selection()
+session_id, selected_job_ids = database_job_selection()
+_, focused_job_id = database_selection()
 if not session_id:
     st.info("Database sidebarからSessionを選択してください。")
     st.stop()
-if not job_id:
-    st.info("Database sidebarからTarget Jobを選択してください。")
+if not selected_job_ids:
+    st.info("Database sidebarのSession Jobsテーブルから1件以上のジョブを選択してください。")
     st.stop()
 
 session = get_session(session_id)
-job = get_job(session_id, job_id)
-if not session or not job:
-    st.warning("選択したSessionまたはJobがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+if not session:
+    st.warning("選択したSessionがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
     st.stop()
 
+selected_jobs = []
+valid_job_ids = []
+for selected_job_id in selected_job_ids:
+    selected_job = get_job(session_id, selected_job_id)
+    if selected_job:
+        valid_job_ids.append(selected_job_id)
+        selected_jobs.append(selected_job)
+selected_job_ids = valid_job_ids
+if not selected_job_ids:
+    st.warning("選択したJobがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.stop()
+if focused_job_id not in selected_job_ids:
+    focused_job_id = selected_job_ids[0]
+
 root = session_dir(session_id)
-selected_job_ids = [job_id]
 st.caption(
-    f"Session `{session_id}` / Job `{job_id}` | "
-    f"{job.get('workflow') or job.get('name') or '-'} | {job.get('status') or '-'}"
+    f"Session `{session_id}` / Selected jobs {len(selected_job_ids)} / Target Job `{focused_job_id}`"
 )
+if len(selected_jobs) > 1:
+    st.dataframe(
+        [
+            {
+                "Job": str(item.get("job_id") or "-"),
+                "Workflow": str(item.get("workflow") or item.get("name") or "-"),
+                "Status": str(item.get("status") or "-"),
+                "Job Note": str(item.get("notes") or ""),
+            }
+            for item in selected_jobs
+        ],
+        hide_index=True,
+        width="stretch",
+        height=min(210, 36 + 35 * len(selected_jobs)),
+    )
 
 with st.container(border=True):
     top_cols = st.columns([1, 1, 1])

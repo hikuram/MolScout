@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
@@ -36,10 +37,10 @@ DB_QUERY_TARGET_APPLIED_STATE_KEY = "database_query_target_applied"
 DB_MULTI_JOB_MODE_STATE_KEY = "database_multi_job_mode"
 DB_MULTI_JOB_MODE_WIDGET_KEY = "database_multi_job_mode_widget"
 DB_SELECTED_JOB_IDS_STATE_KEY = "database_selected_job_ids"
-DB_SELECTED_JOB_IDS_WIDGET_KEY = "database_selected_job_ids_widget"
 DB_ARCHIVE_FLAT_STATE_KEY = "database_archive_flat"
 DB_ARCHIVE_MERGED_STATE_KEY = "database_archive_merged_csv"
 DB_PENDING_MULTI_SELECTION_STATE_KEY = "database_pending_multi_selection"
+DB_JOB_TABLE_SYNC_STATE_KEY = "database_job_table_sync"
 
 
 def current_query_session_id() -> str:
@@ -239,6 +240,7 @@ def _persist_database_query_target(session_id: str, job_id: str = "") -> None:
         st.query_params[DB_JOB_QUERY_PARAM_KEY] = job_id
     else:
         st.query_params.pop(DB_JOB_QUERY_PARAM_KEY, None)
+    st.session_state[DB_QUERY_TARGET_APPLIED_STATE_KEY] = f"{session_id}|{job_id}"
 
 
 def _apply_database_query_target(sessions: list[dict]) -> None:
@@ -257,6 +259,13 @@ def _apply_database_query_target(sessions: list[dict]) -> None:
         if job_id in job_ids:
             st.session_state[DB_SELECTED_JOB_STATE_KEY] = job_id
             st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = job_id
+            st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
+            st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
+            st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [job_id]
+            st.session_state[DB_JOB_TABLE_SYNC_STATE_KEY] = {
+                "session_id": session_id,
+                "job_ids": [job_id],
+            }
 
     st.session_state[DB_QUERY_TARGET_APPLIED_STATE_KEY] = token
 
@@ -305,8 +314,10 @@ def _sync_database_session_from_widget() -> None:
         return
     st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = ""
+    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
+    st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
     st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = []
-    st.session_state.pop(DB_SELECTED_JOB_IDS_WIDGET_KEY, None)
+    st.session_state.pop(DB_JOB_TABLE_SYNC_STATE_KEY, None)
     _persist_database_query_target(selected)
 
 
@@ -326,27 +337,53 @@ def _sync_database_job_from_widget() -> None:
     selected = str(st.session_state.get(DB_JOB_SELECTOR_WIDGET_KEY) or "")
     if selected:
         st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected
+        if not bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False)):
+            st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [selected]
         session_id = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
         _persist_database_query_target(session_id, selected)
 
 
 def database_selection() -> tuple[str, str]:
-    """Return the database sidebar session/job selection for this browser tab."""
+    """Return the database sidebar session and focused job selection."""
     return (
         str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or ""),
         str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or ""),
     )
 
 
+def database_job_selection() -> tuple[str, list[str]]:
+    """Return the database sidebar session and selected job set."""
+    session_id = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
+    focused_job_id = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
+    if not bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False)):
+        return session_id, [focused_job_id] if focused_job_id else []
+
+    selected_job_ids = [
+        str(job_id)
+        for job_id in st.session_state.get(DB_SELECTED_JOB_IDS_STATE_KEY, [])
+        if str(job_id)
+    ]
+    return session_id, selected_job_ids
+
+
 def set_database_selection(session_id: str, job_id: str = "") -> None:
     """Set the database browsing target without changing the queue session."""
-    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = str(session_id or "")
-    st.session_state[DB_SELECTED_JOB_STATE_KEY] = str(job_id or "")
-    _persist_database_query_target(str(session_id or ""), str(job_id or ""))
+    normalized_session_id = str(session_id or "")
+    normalized_job_id = str(job_id or "")
+    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = normalized_session_id
+    st.session_state[DB_SELECTED_JOB_STATE_KEY] = normalized_job_id
+    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
+    st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
+    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [normalized_job_id] if normalized_job_id else []
+    st.session_state[DB_JOB_TABLE_SYNC_STATE_KEY] = {
+        "session_id": normalized_session_id,
+        "job_ids": [normalized_job_id] if normalized_job_id else [],
+    }
+    _persist_database_query_target(normalized_session_id, normalized_job_id)
 
 
 def set_database_multi_selection(session_id: str, job_ids: list[str]) -> None:
-    """Queue a multi-job archive selection for the next sidebar render."""
+    """Queue a multi-job table selection for the next sidebar render."""
     normalized = [str(job_id) for job_id in job_ids if str(job_id)]
     st.session_state[DB_PENDING_MULTI_SELECTION_STATE_KEY] = {
         "session_id": str(session_id or ""),
@@ -379,7 +416,10 @@ def _apply_pending_database_multi_selection(sessions: list[dict]) -> None:
     st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = True
     st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = True
     st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
-    st.session_state[DB_SELECTED_JOB_IDS_WIDGET_KEY] = selected_job_ids
+    st.session_state[DB_JOB_TABLE_SYNC_STATE_KEY] = {
+        "session_id": session_id,
+        "job_ids": selected_job_ids,
+    }
     _persist_database_query_target(session_id, active_job_id)
 
 
@@ -396,66 +436,138 @@ def _archive_signature(jobs: list[dict], job_ids: tuple[str, ...]) -> tuple[tupl
     )
 
 
-def _render_multi_job_archive(session_id: str, jobs: list[dict], active_job_id: str) -> None:
-    st.session_state.setdefault(
-        DB_MULTI_JOB_MODE_WIDGET_KEY,
-        bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False)),
+def _render_multi_job_mode_toggle(session_id: str, active_job_id: str) -> bool:
+    previous_enabled = bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False))
+    st.session_state.setdefault(DB_MULTI_JOB_MODE_WIDGET_KEY, previous_enabled)
+    enabled = bool(
+        st.toggle(
+            "Select multiple jobs",
+            key=DB_MULTI_JOB_MODE_WIDGET_KEY,
+        )
     )
-    enabled = st.toggle(
-        "Select multiple jobs",
-        key=DB_MULTI_JOB_MODE_WIDGET_KEY,
-    )
-    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = bool(enabled)
-    if not enabled:
-        return
+    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = enabled
 
+    if enabled != previous_enabled:
+        selected_job_ids = [active_job_id] if active_job_id else []
+        st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
+        if enabled:
+            st.session_state[DB_JOB_TABLE_SYNC_STATE_KEY] = {
+                "session_id": session_id,
+                "job_ids": selected_job_ids,
+            }
+        else:
+            st.session_state.pop(DB_JOB_TABLE_SYNC_STATE_KEY, None)
+    elif not enabled:
+        st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [active_job_id] if active_job_id else []
+
+    return enabled
+
+
+def _render_session_jobs_selector(
+    session_id: str,
+    jobs: list[dict],
+    active_job_id: str,
+    *,
+    multi_enabled: bool,
+) -> list[str]:
     job_ids = [str(item.get("job_id") or "") for item in jobs]
+    rows = [
+        {
+            "Job": str(item.get("job_id") or "-"),
+            "Workflow": str(item.get("workflow") or item.get("name") or "-"),
+            "Status": str(item.get("status") or "-"),
+            "Job Note": str(item.get("notes") or ""),
+        }
+        for item in jobs
+    ]
+    table_height = min(245, 36 + 35 * len(rows))
+    column_config = {
+        "Job": st.column_config.TextColumn("Job", width="medium"),
+        "Workflow": st.column_config.TextColumn("Workflow", width="medium"),
+        "Status": st.column_config.TextColumn("Status", width="small"),
+        "Job Note": st.column_config.TextColumn("Job Note", width="large"),
+    }
+
+    st.markdown("**Session Jobs**")
+    if not multi_enabled:
+        st.dataframe(
+            rows,
+            hide_index=True,
+            width="stretch",
+            height=table_height,
+            column_config=column_config,
+        )
+        selected_job_ids = [active_job_id] if active_job_id in job_ids else []
+        st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
+        return selected_job_ids
+
+    signature = hashlib.sha1("|".join(job_ids).encode("utf-8")).hexdigest()[:12]
+    table_key = f"database_session_jobs_{session_id}_{signature}"
     state_selected = [
         str(job_id)
         for job_id in st.session_state.get(DB_SELECTED_JOB_IDS_STATE_KEY, [])
         if str(job_id) in job_ids
     ]
-    widget_selected = [
-        str(job_id)
-        for job_id in st.session_state.get(DB_SELECTED_JOB_IDS_WIDGET_KEY, [])
-        if str(job_id) in job_ids
-    ]
-    if DB_SELECTED_JOB_IDS_WIDGET_KEY in st.session_state:
-        selected = widget_selected
-    else:
-        selected = state_selected
-        if not selected and active_job_id in job_ids:
-            selected = [active_job_id]
-        st.session_state[DB_SELECTED_JOB_IDS_WIDGET_KEY] = selected
+    if not state_selected and active_job_id in job_ids:
+        state_selected = [active_job_id]
+        st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = state_selected
 
-    selected_ids = st.multiselect(
-        "Jobs for ZIP",
-        options=job_ids,
-        key=DB_SELECTED_JOB_IDS_WIDGET_KEY,
-        format_func=lambda job_id: next(
-            (
-                f"{item.get('job_id')} | {item.get('status') or '-'}"
-                for item in jobs
-                if str(item.get("job_id") or "") == job_id
-            ),
-            job_id,
-        ),
+    pending = st.session_state.get(DB_JOB_TABLE_SYNC_STATE_KEY)
+    if isinstance(pending, dict) and str(pending.get("session_id") or "") == session_id:
+        requested = [str(job_id) for job_id in pending.get("job_ids", [])]
+        selected_rows = [index for index, job_id in enumerate(job_ids) if job_id in requested]
+        st.session_state[table_key] = {"selection": {"rows": selected_rows}}
+        st.session_state.pop(DB_JOB_TABLE_SYNC_STATE_KEY, None)
+    elif table_key not in st.session_state and state_selected:
+        selected_rows = [index for index, job_id in enumerate(job_ids) if job_id in state_selected]
+        st.session_state[table_key] = {"selection": {"rows": selected_rows}}
+
+    selection_event = st.dataframe(
+        rows,
+        hide_index=True,
+        width="stretch",
+        height=table_height,
+        on_select="rerun",
+        selection_mode="multi-row",
+        key=table_key,
+        column_config=column_config,
     )
-    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = list(selected_ids)
-    if not selected_ids:
-        st.caption("Select at least one job.")
+    raw_selected_rows = selection_event.selection.rows
+    selected_rows = [
+        index
+        for index in raw_selected_rows
+        if isinstance(index, int) and 0 <= index < len(job_ids)
+    ]
+    selected_job_ids = [job_ids[index] for index in selected_rows]
+    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
+
+    if selected_job_ids:
+        focused_job_id = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
+        if focused_job_id not in selected_job_ids:
+            focused_job_id = selected_job_ids[0]
+            st.session_state[DB_SELECTED_JOB_STATE_KEY] = focused_job_id
+            st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = focused_job_id
+            _persist_database_query_target(session_id, focused_job_id)
+
+    return selected_job_ids
+
+
+def _render_selected_jobs_archive(
+    session_id: str,
+    jobs: list[dict],
+    selected_job_ids: list[str],
+) -> None:
+    if not selected_job_ids:
         return
 
+    st.caption(f"Selected jobs: {len(selected_job_ids)}")
     with st.expander("Archive options", expanded=False):
         st.session_state.setdefault(DB_ARCHIVE_FLAT_STATE_KEY, True)
         st.session_state.setdefault(DB_ARCHIVE_MERGED_STATE_KEY, True)
         flat = st.toggle("Flat ZIP", key=DB_ARCHIVE_FLAT_STATE_KEY)
-        merged = st.toggle(
-            "Include merged CSV",
-            key=DB_ARCHIVE_MERGED_STATE_KEY,
-        )
+        merged = st.toggle("Include merged CSV", key=DB_ARCHIVE_MERGED_STATE_KEY)
 
-    selected_tuple = tuple(selected_ids)
+    selected_tuple = tuple(selected_job_ids)
     state_key = (
         "database_selected_jobs_archive::"
         + session_id
@@ -489,8 +601,6 @@ def _render_multi_job_archive(session_id: str, jobs: list[dict], active_job_id: 
             width="stretch",
             key="database_download_selected_jobs_zip",
         )
-
-
 
 
 def render_database_sidebar() -> dict | None:
@@ -539,9 +649,14 @@ def render_database_sidebar() -> dict | None:
             selected_job = None
             if jobs:
                 job_ids = [str(item["job_id"]) for item in jobs]
-                selected_job_id = _resolve_database_job_id(jobs)
-                if st.session_state.get(DB_JOB_SELECTOR_WIDGET_KEY) != selected_job_id:
-                    st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = selected_job_id
+                active_job_id = _resolve_database_job_id(jobs)
+                multi_enabled = _render_multi_job_mode_toggle(selected_session_id, active_job_id)
+                selected_job_ids = _render_session_jobs_selector(
+                    selected_session_id,
+                    jobs,
+                    active_job_id,
+                    multi_enabled=multi_enabled,
+                )
 
                 job_labels = {
                     str(item["job_id"]): (
@@ -550,108 +665,109 @@ def render_database_sidebar() -> dict | None:
                     )
                     for item in jobs
                 }
-                selected_job_id = st.selectbox(
-                    "Target Job",
-                    job_ids,
-                    key=DB_JOB_SELECTOR_WIDGET_KEY,
-                    format_func=lambda job_id: job_labels[job_id],
-                    on_change=_sync_database_job_from_widget,
-                )
-                st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected_job_id
-                _persist_database_query_target(selected_session_id, selected_job_id)
-                selected_job = next(
-                    (item for item in jobs if str(item["job_id"]) == selected_job_id),
-                    None,
-                )
+                target_options = selected_job_ids if multi_enabled else job_ids
+                if target_options:
+                    focused_job_id = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
+                    if focused_job_id not in target_options:
+                        focused_job_id = target_options[0]
+                    if st.session_state.get(DB_JOB_SELECTOR_WIDGET_KEY) != focused_job_id:
+                        st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = focused_job_id
 
-                if selected_job:
-                    _render_multi_job_archive(selected_session_id, jobs, selected_job_id)
-
-                    st.markdown("**Session Jobs**")
-                    job_rows = [
-                        {
-                            "Job": str(item.get("job_id") or "-"),
-                            "Workflow": str(item.get("workflow") or item.get("name") or "-"),
-                            "Status": str(item.get("status") or "-"),
-                        }
-                        for item in jobs
-                    ]
-                    st.dataframe(
-                        job_rows,
-                        hide_index=True,
-                        width="stretch",
-                        height=min(210, 36 + 35 * len(job_rows)),
+                    selected_job_id = st.selectbox(
+                        "Target Job",
+                        target_options,
+                        key=DB_JOB_SELECTOR_WIDGET_KEY,
+                        format_func=lambda job_id: job_labels[job_id],
+                        on_change=_sync_database_job_from_widget,
+                    )
+                    st.session_state[DB_SELECTED_JOB_STATE_KEY] = selected_job_id
+                    if not multi_enabled:
+                        selected_job_ids = [selected_job_id]
+                        st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
+                    _persist_database_query_target(selected_session_id, selected_job_id)
+                    selected_job = next(
+                        (item for item in jobs if str(item["job_id"]) == selected_job_id),
+                        None,
                     )
 
-                    st.markdown("**Target Summary**")
-                    cols = st.columns(2)
-                    cols[0].metric("Status", selected_job.get("status") or "-")
-                    cols[1].metric(
-                        "Indexed Files",
-                        int(selected_job.get("artifact_catalog_count") or 0),
-                    )
-                    workflow = selected_job.get("workflow") or selected_job.get("name") or "-"
-                    method = selected_job.get("method") or "-"
-                    st.caption(f"Workflow: {workflow}")
-                    st.caption(f"Method: {method}")
-                    st.caption(
-                        f"Charge: {selected_job.get('charge', 0)} | "
-                        f"Multiplicity: {selected_job.get('mult', 1)}"
-                    )
-                    st.caption(
-                        f"Created: {format_app_time(selected_job.get('created_at'))} | "
-                        f"Exit: {'-' if selected_job.get('exit_code') is None else selected_job.get('exit_code')}"
-                    )
-                    selected_steps = [
-                        label
-                        for key, label in [
-                            ("initial_path", "Initial Path"),
-                            ("ts_opt", "TS Opt"),
-                            ("irc", "IRC"),
-                            ("vib", "Vib & Thermo"),
-                            ("refine", "Energy Refine"),
+                    if multi_enabled:
+                        _render_selected_jobs_archive(selected_session_id, jobs, selected_job_ids)
+
+                    if selected_job:
+                        st.markdown("**Target Summary**")
+                        cols = st.columns(2)
+                        cols[0].metric("Status", selected_job.get("status") or "-")
+                        cols[1].metric(
+                            "Indexed Files",
+                            int(selected_job.get("artifact_catalog_count") or 0),
+                        )
+                        workflow = selected_job.get("workflow") or selected_job.get("name") or "-"
+                        method = selected_job.get("method") or "-"
+                        st.caption(f"Workflow: {workflow}")
+                        st.caption(f"Method: {method}")
+                        st.caption(
+                            f"Charge: {selected_job.get('charge', 0)} | "
+                            f"Multiplicity: {selected_job.get('mult', 1)}"
+                        )
+                        st.caption(
+                            f"Created: {format_app_time(selected_job.get('created_at'))} | "
+                            f"Exit: {'-' if selected_job.get('exit_code') is None else selected_job.get('exit_code')}"
+                        )
+                        selected_steps = [
+                            label
+                            for key, label in [
+                                ("initial_path", "Initial Path"),
+                                ("ts_opt", "TS Opt"),
+                                ("irc", "IRC"),
+                                ("vib", "Vib & Thermo"),
+                                ("refine", "Energy Refine"),
+                            ]
+                            if selected_job.get("workflow_steps", {}).get(key)
                         ]
-                        if selected_job.get("workflow_steps", {}).get(key)
-                    ]
-                    if selected_steps:
-                        st.caption("Steps: " + ", ".join(selected_steps))
+                        if selected_steps:
+                            st.caption("Steps: " + ", ".join(selected_steps))
 
-                    with st.expander("Run Settings", expanded=False):
-                        st.caption(
-                            f"Temperature: {selected_job.get('temperature', 298.15):.2f} K"
-                        )
-                        st.caption(
-                            f"TBLITE: {selected_job.get('tblite_method', 'hybrid')}"
-                        )
-                        overrides = selected_job.get("config_overrides", {})
-                        st.caption(
-                            f"OrbMol: {overrides.get('ORBMOL_VERSION', '-')} | "
-                            f"ALPB: {overrides.get('ALPB_SOLVENT', '-')}"
-                        )
-                        st.caption(
-                            f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', '-')}"
-                        )
-                        st.caption(
-                            f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
-                            f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)}"
-                        )
-                        st.caption(
-                            f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
-                            f"Initial path: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
-                        )
-                        if selected_job.get("notes"):
-                            st.caption(f"Notes: {selected_job.get('notes')}")
-
-                    if selected_job.get("completion_reason") or selected_job.get("status_message"):
-                        st.caption(
-                            f"Result: {selected_job.get('completion_reason') or '-'}"
-                            + (
-                                f" | {selected_job.get('status_message')}"
-                                if selected_job.get("status_message")
-                                else ""
+                        with st.expander("Run Settings", expanded=False):
+                            st.caption(
+                                f"Temperature: {selected_job.get('temperature', 298.15):.2f} K"
                             )
-                        )
+                            st.caption(
+                                f"TBLITE: {selected_job.get('tblite_method', 'hybrid')}"
+                            )
+                            overrides = selected_job.get("config_overrides", {})
+                            st.caption(
+                                f"OrbMol: {overrides.get('ORBMOL_VERSION', '-')} | "
+                                f"ALPB: {overrides.get('ALPB_SOLVENT', '-')}"
+                            )
+                            st.caption(
+                                f"TBLITE accuracy: {overrides.get('TBLITE_ACCURACY', '-')}"
+                            )
+                            st.caption(
+                                f"Refine input: {overrides.get('REFINE_INPUT_ON', False)} | "
+                                f"Pick opt points: {overrides.get('PICK_OPTPOINTS_ON', True)}"
+                            )
+                            st.caption(
+                                f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
+                                f"Initial path: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
+                            )
+                            if selected_job.get("notes"):
+                                st.caption(f"Notes: {selected_job.get('notes')}")
+
+                        if selected_job.get("completion_reason") or selected_job.get("status_message"):
+                            st.caption(
+                                f"Result: {selected_job.get('completion_reason') or '-'}"
+                                + (
+                                    f" | {selected_job.get('status_message')}"
+                                    if selected_job.get("status_message")
+                                    else ""
+                                )
+                            )
+                elif multi_enabled:
+                    st.caption("Session Jobsテーブルから1件以上のジョブを選択してください。")
             else:
+                st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = []
+                st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
+                st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
                 st.session_state.pop(DB_SELECTED_JOB_STATE_KEY, None)
                 st.session_state.pop(DB_JOB_SELECTOR_WIDGET_KEY, None)
                 st.info("このセッションにはジョブがありません。")
