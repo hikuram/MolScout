@@ -7,6 +7,8 @@ import io
 
 import streamlit as st
 
+from app_ui.i18n import t, tf
+
 from app_core.artifact_manager import (
     artifact_path,
     diagnose_artifact_catalog,
@@ -63,36 +65,36 @@ def render_catalog() -> None:
     sessions = list_sessions()
     session_ids = [str(item["session_id"]) for item in sessions]
 
-    st.markdown("### :material/search: 横断検索")
+    st.markdown(t('### :material/search: Cross-session search'))
     row1 = st.columns([2.5, 1.5, 1.3])
     search_text = row1[0].text_input(
-        "検索",
-        placeholder="ファイル名、パス、ジョブ名、job note、workflow、method、owner",
+        t('Search'),
+        placeholder=t('Filename, path, job name, job note, workflow, method, owner'),
     )
     selected_session = row1[1].selectbox(
-        "セッション",
+        t('Session'),
         [""] + session_ids,
-        format_func=lambda value: "すべて" if not value else value,
+        format_func=lambda value: t('All') if not value else value,
     )
     selected_type = row1[2].selectbox(
-        "ファイル種別",
+        t('File type'),
         [""] + filter_values["artifact_types"],
-        format_func=lambda value: "すべて" if not value else value,
+        format_func=lambda value: t('All') if not value else value,
     )
 
     row2 = st.columns([1.3, 1.3, 1])
     availability = row2[0].selectbox(
-        "実体状態",
+        t('File status'),
         ["", "available", "missing"],
         index=1,
-        format_func=lambda value: {"": "すべて", "available": "利用可能", "missing": "欠損"}[value],
+        format_func=lambda value: {"": t('All'), "available": t('Available'), "missing": t('Missing')}[value],
     )
     job_status = row2[1].selectbox(
-        "ジョブ状態",
+        t('Job status'),
         [""] + filter_values["job_statuses"],
-        format_func=lambda value: "すべて" if not value else value,
+        format_func=lambda value: t('All') if not value else value,
     )
-    limit = row2[2].selectbox("表示上限", [100, 300, 500, 1000], index=2)
+    limit = row2[2].selectbox(t('Result limit'), [100, 300, 500, 1000], index=2)
 
     records = search_artifact_records(
         text=search_text,
@@ -102,7 +104,10 @@ def render_catalog() -> None:
         job_status=job_status,
         limit=limit,
     )
-    st.caption(f"{len(records)}件を表示しています。ファイル内容はDBに格納せず、dataディレクトリ上の実体を参照します。")
+    st.caption(tf(
+        "Showing {count} records. File contents are not stored in the database; entries reference files under the data directory.",
+        count=len(records),
+    ))
 
     table_rows = [
         {
@@ -220,9 +225,9 @@ def render_catalog() -> None:
         else:
             st.caption("Sidebar job selection is session-scoped; selected jobs span multiple sessions.")
 
-    st.markdown("### :material/draft: ファイル詳細")
+    st.markdown(t('### :material/draft: File details'))
     selected_path = st.selectbox(
-        "対象ファイル",
+        t('Selected file'),
         path_options,
         key="artifact_catalog_selected_path",
         format_func=lambda value: value,
@@ -258,11 +263,11 @@ def render_catalog() -> None:
         if not results_url or not chemiscope_url:
             st.caption("New-tab links are unavailable because the current app URL could not be resolved.")
     else:
-        st.caption("この成果物にはJob IDがないため、Results / Chemiscopeへの導線はありません。")
+        st.caption(t('This artifact has no Job ID, so Results / Chemiscope links are not available.'))
 
     metadata = selected.get("metadata") or {}
     if metadata:
-        with st.expander("登録メタデータ", expanded=False):
+        with st.expander(t('Catalog metadata'), expanded=False):
             st.json(metadata)
 
     try:
@@ -271,16 +276,19 @@ def render_catalog() -> None:
         st.error(str(exc))
         return
     if not path.exists() or not path.is_file():
-        st.warning("ファイル実体が見つかりません。保守タブで診断または再スキャンしてください。")
+        st.warning(t('The file is missing. Run diagnostics or rescan from the maintenance tab.'))
         return
     current_size = path.stat().st_size
     if current_size > MAX_DOWNLOAD_BYTES:
         st.info(
-            f"{format_bytes(current_size)}のため、この画面からのダウンロード対象外です。dataディレクトリ上の実体を利用してください。"
+            tf(
+                "{size} exceeds the download limit for this page. Use the file directly from the data directory.",
+                size=format_bytes(current_size),
+            )
         )
         return
     st.download_button(
-        ":material/download: このファイルをダウンロード",
+        t(':material/download: Download this file'),
         data=path.read_bytes(),
         file_name=path.name,
         mime="application/octet-stream",
@@ -290,68 +298,82 @@ def render_catalog() -> None:
 
 def render_maintenance() -> None:
     st.info(
-        "このページの操作はカタログ登録と診断だけです。ファイル削除、DBレコード削除、孤立データの自動修復は行いません。"
+        t('This page only updates the artifact catalog and runs diagnostics. It does not delete files or database records, or automatically repair orphaned data.')
     )
     cols = st.columns(2)
-    if cols[0].button(":material/sync: dataを再スキャン", type="primary", width="stretch"):
+    if cols[0].button(t(':material/sync: Rescan data'), type="primary", width="stretch"):
         try:
-            with st.spinner("dataディレクトリを走査しています..."):
+            with st.spinner(t('Scanning the data directory...')):
                 result = scan_all_artifacts(source="admin_page", dry_run=False)
         except Exception as exc:
-            st.error(f"再スキャンに失敗しました: {type(exc).__name__}: {exc}")
+            st.error(tf(
+                "Rescan failed: {error_type}: {error}",
+                error_type=type(exc).__name__,
+                error=exc,
+            ))
         else:
             st.session_state.pop(DIAGNOSTIC_STATE_KEY, None)
             if result["errors"]:
                 st.warning(
-                    f"{result['artifacts_found']}件を検出しましたが、{len(result['errors'])}件のエラーがあります。"
+                    tf(
+                        "Found {artifact_count} artifacts with {error_count} errors.",
+                        artifact_count=result["artifacts_found"],
+                        error_count=len(result["errors"]),
+                    )
                 )
                 st.code("\n".join(result["errors"]), language="text")
             else:
-                st.success(
-                    f"{result['sessions_scanned']}セッション、{result['jobs_scanned']}ジョブ、"
-                    f"{result['artifacts_found']}ファイルを確認しました。"
-                )
+                st.success(tf(
+                    "Scanned {session_count} sessions, {job_count} jobs, and {artifact_count} files.",
+                    session_count=result["sessions_scanned"],
+                    job_count=result["jobs_scanned"],
+                    artifact_count=result["artifacts_found"],
+                ))
 
-    if cols[1].button(":material/fact_check: 整合性を診断", width="stretch"):
+    if cols[1].button(t(':material/fact_check: Run consistency diagnostics'), width="stretch"):
         try:
-            with st.spinner("DBとファイルを照合しています..."):
+            with st.spinner(t('Comparing database records with files...')):
                 st.session_state[DIAGNOSTIC_STATE_KEY] = diagnose_artifact_catalog()
         except Exception as exc:
-            st.error(f"診断に失敗しました: {type(exc).__name__}: {exc}")
+            st.error(tf(
+                "Diagnostics failed: {error_type}: {error}",
+                error_type=type(exc).__name__,
+                error=exc,
+            ))
 
     report = st.session_state.get(DIAGNOSTIC_STATE_KEY)
     if not report:
-        st.caption("診断は明示実行時のみ行います。大きなdataディレクトリでは走査に時間がかかります。")
+        st.caption(t('Diagnostics run only when explicitly requested. Scanning may take time for a large data directory.'))
         return
 
-    st.markdown("### :material/health_and_safety: 診断結果")
+    st.markdown(t('### :material/health_and_safety: Diagnostic results'))
     cols = st.columns(3)
-    cols[0].metric("DB登録数", report["registered_count"])
-    cols[1].metric("対象ファイル数", report["eligible_files_found"])
-    cols[2].metric("問題候補", report["issue_count"])
+    cols[0].metric(t('Catalog entries'), report["registered_count"])
+    cols[1].metric(t('Files in scope'), report["eligible_files_found"])
+    cols[2].metric(t('Potential issues'), report["issue_count"])
 
     issues = report["issues"]
     if not issues:
-        st.success("登録対象について不整合は見つかりませんでした。")
+        st.success(t('No inconsistencies were found for cataloged artifacts.'))
         return
 
     st.dataframe(issues, hide_index=True, width="stretch", height=430)
     st.download_button(
-        ":material/download: 診断結果CSV",
+        t(':material/download: Download diagnostics CSV'),
         data=issues_csv(issues),
         file_name="molscout_artifact_diagnostics.csv",
         mime="text/csv",
         width="stretch",
     )
-    with st.expander("問題種別ごとの件数", expanded=False):
+    with st.expander(t('Issue counts by type'), expanded=False):
         st.json(report["issue_counts"])
 
 
 st.set_page_config(page_title="MolScout [Data]")
 st.markdown("## :material/database: Data Catalog")
-st.caption("全セッションの成果物を検索し、PostgreSQLの登録情報とdataディレクトリの整合性を確認します。")
+st.caption(t('Search artifacts across all sessions and check consistency between PostgreSQL catalog entries and the data directory.'))
 
-catalog_tab, maintenance_tab = st.tabs(["横断閲覧", "保守・診断"])
+catalog_tab, maintenance_tab = st.tabs([t('Browse'), t('Maintenance / diagnostics')])
 with catalog_tab:
     render_catalog()
 with maintenance_tab:

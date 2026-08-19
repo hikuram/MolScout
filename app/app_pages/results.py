@@ -4,33 +4,35 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app_ui.i18n import t
+
 from app_core.session_manager import get_job, get_session, list_jobs
 from app_ui.sidebar import database_job_selection, database_selection
 from app_ui.views import render_job_detail
 
 
 st.markdown("## :material/monitoring: Results")
-st.caption("Database sidebarのSession Jobsテーブルで選択したジョブのログ、生成物、ダウンロードを確認します。")
+st.caption(t('View jobs, logs, generated outputs, and downloads for the selected session.'))
 
 session_id, selected_job_ids = database_job_selection()
 _, focused_job_id = database_selection()
 if not session_id:
-    st.info("Database sidebarからSessionを選択してください。")
+    st.info(t('Select a session from the Database sidebar.'))
     st.stop()
 if not selected_job_ids:
-    st.info("Database sidebarのSession Jobsテーブルから1件以上のジョブを選択してください。")
+    st.info(t('Select one or more jobs from the Session Jobs table in the Database sidebar.'))
     st.stop()
 
 session = get_session(session_id)
 if not session:
-    st.warning("選択したSessionがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.warning(t('The selected session does not exist in the database. Use Refresh in the sidebar to reload the options.'))
     st.stop()
 
 jobs = list_jobs(session_id)
 job_by_id = {str(item.get("job_id") or ""): item for item in jobs}
 selected_jobs = [job_by_id[job_id] for job_id in selected_job_ids if job_id in job_by_id]
 if not selected_jobs:
-    st.warning("選択したJobがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.warning(t('The selected job does not exist in the database. Use Refresh in the sidebar to reload the options.'))
     st.stop()
 
 selected_job_ids = [str(item["job_id"]) for item in selected_jobs]
@@ -38,7 +40,7 @@ if focused_job_id not in selected_job_ids:
     focused_job_id = selected_job_ids[0]
 job = get_job(session_id, focused_job_id)
 if not job:
-    st.warning("Target JobがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.warning(t('The target job does not exist in the database. Use Refresh in the sidebar to reload the options.'))
     st.stop()
 
 job_index = next(

@@ -8,6 +8,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from app_ui.i18n import t, tf
+
 from app_core.session_manager import get_job, get_session, session_dir
 from app_core.trajectory_viewer import (
     DEFAULT_MAX_FRAMES,
@@ -43,7 +45,7 @@ def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFram
 
 
 def render_dependency_hint(error: Exception) -> None:
-    st.error("Trajectory visualization に必要な dependency が不足しています。")
+    st.error(t('Required dependencies for trajectory visualization are missing.'))
     st.code(
         "pip install ase pandas numpy 'chemiscope[streamlit]'",
         language="bash",
@@ -58,20 +60,20 @@ def filter_files_for_jobs(files_df: pd.DataFrame, job_ids: list[str]) -> pd.Data
 
 st.set_page_config(page_title="MolScout [Chemiscope]")
 st.markdown("## :material/animation: Chemiscope")
-st.caption("Database sidebarで選択したジョブの trajectory / XYZ を chemiscope で確認します。")
+st.caption(t('Inspect trajectory and XYZ files from the selected session with Chemiscope.'))
 
 session_id, selected_job_ids = database_job_selection()
 _, focused_job_id = database_selection()
 if not session_id:
-    st.info("Database sidebarからSessionを選択してください。")
+    st.info(t('Select a session from the Database sidebar.'))
     st.stop()
 if not selected_job_ids:
-    st.info("Database sidebarのSession Jobsテーブルから1件以上のジョブを選択してください。")
+    st.info(t('Select one or more jobs from the Session Jobs table in the Database sidebar.'))
     st.stop()
 
 session = get_session(session_id)
 if not session:
-    st.warning("選択したSessionがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.warning(t('The selected session does not exist in the database. Use Refresh in the sidebar to reload the options.'))
     st.stop()
 
 selected_jobs = []
@@ -83,7 +85,7 @@ for selected_job_id in selected_job_ids:
         selected_jobs.append(selected_job)
 selected_job_ids = valid_job_ids
 if not selected_job_ids:
-    st.warning("選択したJobがDBに存在しません。SidebarのRefreshで選択肢を読み直してください。")
+    st.warning(t('The selected job does not exist in the database. Use Refresh in the sidebar to reload the options.'))
     st.stop()
 if focused_job_id not in selected_job_ids:
     focused_job_id = selected_job_ids[0]
@@ -162,12 +164,12 @@ if not files_df.empty:
     files_df = filter_files_for_jobs(files_df, selected_job_ids)
 
 if files_df.empty:
-    st.info("選択した job 内に trajectory file が見つかりません。")
+    st.info(t('No trajectory files were found in the selected jobs.'))
     st.stop()
 
 filter_key = f"{session_id}_chemiscope_traj_filter_{'-'.join(selected_job_ids)}"
 selected_filter = st.segmented_control(
-    "ファイル名フィルター",
+    t('Filename filter'),
     options=list(TRAJECTORY_FILTERS),
     default="*.traj",
     key=filter_key,
@@ -175,13 +177,17 @@ selected_filter = st.segmented_control(
 filtered_files_df = filter_trajectory_files(files_df, str(selected_filter or "*.traj"))
 
 if filtered_files_df.empty:
-    st.info("このフィルターに一致する trajectory file はありません。")
+    st.info(t('No trajectory files match this filter.'))
     st.stop()
 
 st.markdown("#### Found trajectory files")
-st.caption(f"`{selected_filter}` に一致するファイル: {len(filtered_files_df):,} 件")
+st.caption(tf(
+    "Files matching `{filter_name}`: {count:,}",
+    filter_name=selected_filter,
+    count=len(filtered_files_df),
+))
 if include_xyz and selected_filter == "*.traj":
-    st.caption("Include XYZ が有効なため、XYZ / extxyz file も表示しています。")
+    st.caption(t('XYZ and extxyz files are also shown because Include XYZ is enabled.'))
 display_df = filtered_files_df[["rel_path", "suffix", "size_kb", "modified"]].copy()
 display_df["size"] = filtered_files_df["path"].map(
     lambda value: file_size_label(Path(str(value)))
@@ -220,7 +226,7 @@ except Exception as error:
     st.stop()
 
 if not structures:
-    st.warning("選択したファイルから structure を読み取れませんでした。")
+    st.warning(t('No structures could be read from the selected file.'))
     st.stop()
 
 frame_table = build_frame_table(structures)
@@ -250,7 +256,7 @@ with right:
         plot_col = st.selectbox("Y axis", options=plot_cols, key=f"{session_id}_chemiscope_y_axis")
         st.line_chart(frame_table, x="step", y=plot_col, height=320)
     else:
-        st.info("Atoms.info / arrays に energy または force の数値プロパティが見つかりません。")
+        st.info(t('No numeric energy or force properties were found in Atoms.info or arrays.'))
 
 st.markdown("#### Structure viewer")
 try:
@@ -279,7 +285,7 @@ except Exception as error:
     st.exception(error)
 
 if selected_path.suffix.lower() == ".traj":
-    st.markdown("#### trajectoryのダウンロード")
+    st.markdown(t('#### Download trajectory'))
     try:
         extxyz_data = trajectory_to_extxyz(
             str(selected_path),
@@ -288,17 +294,17 @@ if selected_path.suffix.lower() == ".traj":
         )
         if extxyz_data:
             st.download_button(
-                "選択中のtrajectoryをextxyzでダウンロード",
+                t('Download selected trajectory as extxyz'),
                 data=extxyz_data,
                 file_name=f"{selected_path.name}.xyz",
                 mime="chemical/x-xyz",
                 width="stretch",
             )
         else:
-            st.warning("選択したtrajectoryに出力可能なframeがありません。")
+            st.warning(t('The selected trajectory contains no frames that can be exported.'))
     except ImportError as error:
         render_dependency_hint(error)
     except Exception as error:
-        st.error("extxyzへの変換に失敗しました。")
+        st.error(t('Failed to convert the trajectory to extxyz.'))
         st.exception(error)
 

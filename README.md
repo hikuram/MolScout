@@ -1,62 +1,70 @@
 # MolScout
 
-MolScout は、反応経路探索と後続の分子計算を自動化するための Python toolkit です。初期経路生成、transition-state optimization、intrinsic reaction coordinate 計算、vibrational analysis、熱化学量評価、および任意の高精度 energy refinement を一連の workflow として扱います。
+[日本語](README.ja.md)
 
-本リポジトリは、共有実行用の Streamlit application と、科学計算 workflow を格納する `core/` directory を中心に構成されています。従来の個別 workflow script は整理済みであり、workflow stage の選択は application wrapper と `core/default_config.py` によって制御します。
+MolScout is a Python toolkit for automating reaction-path searches and follow-up molecular calculations. It treats initial-path generation, transition-state optimization, intrinsic reaction coordinate calculations, vibrational analysis, thermochemical evaluation, and optional high-level energy refinement as a connected workflow.
 
-## 主な機能
+This repository is centered on a Streamlit application for shared execution and the `core/` directory containing the scientific workflow. The earlier standalone workflow variants have been consolidated; workflow-stage selection is controlled by the application wrapper and `core/default_config.py`.
 
-- DMF、NEB、SCAN、または連結済み trajectory による初期経路生成
-- ASE / Sella を用いた transition-state optimization と adaptive IRC 計算
-- 低振動数・数値誤差に配慮した vibrational analysis と熱化学量評価
-- OrbMol、xTB/ALPB delta correction、PySCF、gpu4pyscf 支援計算に対応した calculator backend
-- `.traj`、`.xyz`、`.csv`、log、figure などによる file-based result handoff
-- 共有 workstation または remote server での実行を想定した Streamlit queue
-- PostgreSQL artifact catalog による session 横断の成果物検索と filesystem 整合性診断
+## Key features
 
-## リポジトリ構成
+- Initial-path generation with DMF, NEB, SCAN, or concatenated trajectories
+- Transition-state optimization and adaptive IRC calculations with ASE / Sella
+- Vibrational analysis and thermochemical evaluation with handling for low-frequency and numerical artifacts
+- Calculator backends for OrbMol, xTB/ALPB delta correction, PySCF, and gpu4pyscf-assisted calculations
+- File-based result handoff through `.traj`, `.xyz`, `.csv`, logs, figures, and related outputs
+- A Streamlit queue designed for shared workstations or remote servers
+- Cross-session artifact search and filesystem consistency diagnostics through a PostgreSQL artifact catalog
+
+## Repository layout
 
 ```text
 MolScout/
-|-- app/                 # Streamlit UI、queue、session、archive 関連
-|-- core/                # 科学計算 workflow modules と sample input
-|-- docs/                # architecture、workflow、backend、environment notes
-|-- scripts/             # metadata migration / artifact catalog utilities
-|-- requirements.txt     # 非 Docker 環境向け Python dependencies
-`-- Dockerfile           # 推奨 environment definition
+|-- app/                 # Streamlit UI, queue, session, and archive components
+|-- core/                # Scientific workflow modules and sample inputs
+|-- docs/                # Architecture, workflow, backend, and environment notes
+|-- scripts/             # Metadata migration and artifact-catalog utilities
+|-- requirements.txt     # Python dependencies for non-Docker environments
+`-- Dockerfile           # Recommended environment definition
 ```
 
 ## Installation
 
-通常利用では、同梱の Dockerfile を用いることを推奨します。計算環境には CUDA、compiled library、optimizer backend に依存する package が含まれるため、Docker image を利用することで app と command-line workflow の動作差を抑えられます。
+For routine use, the provided Dockerfile is recommended. The calculation environment includes packages that depend on CUDA, compiled libraries, and optimizer backends. Using the Docker image reduces differences between the application and command-line workflows.
 
-リポジトリ root で image を build します。
+Build the image from the repository root:
 
 ```bash
 docker build -t molscout .
 ```
 
-GPU を利用する interactive container を起動します。
+Run an interactive container with GPU access:
 
 ```bash
 docker run --gpus all -it --rm -p 8501:8501 molscout
 ```
 
-container 内で Streamlit app を起動します。
+Launch the default English Streamlit app inside the container:
 
 ```bash
 streamlit run /opt/MolScout/app/streamlit_app.py --server.address 0.0.0.0
 ```
 
-開発や軽量な確認に限り、pip による直接 setup も可能です。ただし backend の挙動は platform に依存する場合があります。
+To launch the Japanese-assisted UI instead:
+
+```bash
+streamlit run /opt/MolScout/app/streamlit_app_ja.py --server.address 0.0.0.0
+```
+
+Direct setup with pip is also possible for development or lightweight checks, but backend behavior can depend on the platform.
 
 ```bash
 pip install -r requirements.txt
 ```
 
-## 動作確認環境
+## Verified environment
 
-現在の確認環境では、以下の package version を使用しました。
+The current verification environment used the following package versions.
 
 | package | version |
 |---|---|
@@ -72,23 +80,23 @@ pip install -r requirements.txt
 | cupy | 13.6.0 |
 | cupytensor | 2.3.1 |
 
-## Streamlit app の起動
+## Launching the Streamlit app
 
-PostgreSQL と Streamlit app は Compose で起動します。
+PostgreSQL and the Streamlit app can be started together with Compose:
 
 ```bash
 podman compose up -d --build
 ```
 
-初回検証後は `.env` で `POSTGRES_PASSWORD` を設定し、Compose file の既定値をそのまま本運用に使用しないでください。
+After the initial verification, set `POSTGRES_PASSWORD` in `.env` and do not use the default password in the Compose file for production operation.
 
-session、job、queue、application state の管理情報は PostgreSQL に保存します。入力構造、trajectory、計算結果、logs、generated archives などの実体ファイルは project root の `data/` 以下に保存します。科学計算の default settings は `core/default_config.py` に保持され、job ごとの override は `app_core.workflow_runner` が適用します。`core/` 以下の source file は app から書き換えません。
+Management metadata for sessions, jobs, the queue, and application state is stored in PostgreSQL. Input structures, trajectories, calculation results, logs, generated archives, and other file payloads are stored under `data/` at the project root. Scientific defaults remain in `core/default_config.py`, and per-job overrides are applied by `app_core.workflow_runner`. The application does not rewrite source files under `core/`.
 
-local checkout から直接起動する場合も、`PGHOST`、`PGDATABASE`、`PGUSER`、`PGPASSWORD` を設定し、接続可能な PostgreSQL を用意してください。
+When launching directly from a local checkout, configure `PGHOST`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD` and provide an accessible PostgreSQL instance.
 
-### 既存成果物のカタログ登録
+### Cataloging existing artifacts
 
-成果物の実体は `data/` に維持し、検索に必要な file metadata だけを PostgreSQL の `artifacts` table に登録します。既存 data は次の単機能 script で登録できます。
+Artifact files remain under `data/`; only metadata needed for search is registered in the PostgreSQL `artifacts` table. Existing data can be indexed with the single-purpose script below.
 
 ```bash
 podman compose exec molscout \
@@ -98,17 +106,17 @@ podman compose exec molscout \
   python /opt/MolScout/scripts/index_artifacts.py
 ```
 
-新規 job は終了処理で自動登録されます。Streamlit の `Data` page から session 横断検索、手動再スキャン、欠損 file・未登録 file・孤立 directory の診断ができます。再スキャンと診断は file を削除または移動しません。
+New jobs are indexed automatically during finalization. The Streamlit `Data` page provides cross-session search, manual rescanning, and diagnostics for missing files, unregistered files, and orphaned directories. Rescanning and diagnostics do not delete or move files.
 
-## core workflow の直接実行
+## Running the core workflow directly
 
-command-line 操作が必要な場合は、reactant/product workflow を直接起動できます。
+For command-line operation, the reactant/product workflow can be launched directly:
 
 ```bash
 python core/molscout.py -d <dest_dir> -c <charge> -m orbmol -r reactant.xyz -p product.xyz
 ```
 
-IRC-only、VIB-only、figure refresh などの stage-specific run では、workflow flags を一貫して設定するため、Streamlit app または app wrapper の利用を推奨します。
+For stage-specific runs such as IRC-only, VIB-only, or figure refresh, using the Streamlit app or the application wrapper is recommended so workflow flags remain internally consistent.
 
 ```bash
 PYTHONPATH=app:core python -m app_core.workflow_runner \
@@ -122,15 +130,17 @@ PYTHONPATH=app:core python -m app_core.workflow_runner \
 
 ## Documentation
 
-- `docs/01_architecture.md`: repository structure と data flow
-- `docs/02_workflow_details.md`: workflow stage ごとの動作
-- `docs/03_calculators.md`: calculator backend notes
-- `docs/04_environment.md`: installation policy と確認済み package versions
+- `docs/01_architecture.md`: repository structure and data flow
+- `docs/02_workflow_details.md`: behavior of individual workflow stages
+- `docs/03_calculators.md`: calculator-backend notes
+- `docs/04_environment.md`: installation policy and verified package versions
+
+Japanese versions are available under `docs/ja/`. The Colab example is available in English as `colab_notebook_example.ipynb` and in Japanese-assisted form as `colab_notebook_example_ja.ipynb`.
 
 ## License
 
-本 project は GPL-3.0 license の下で配布されます。詳細は `LICENSE` を参照してください。
+This project is distributed under the GPL-3.0 license. See `LICENSE` for details.
 
 ## Acknowledgments
 
-本 workflow 設計の一部は ColabReaction および redox_benchmark を参考にしています。production calculation で利用する third-party project と dependencies については、それぞれの license と citation requirements を確認してください。
+Parts of the workflow design were informed by ColabReaction and redox_benchmark. For third-party projects and dependencies used in production calculations, review their licenses and citation requirements.

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app_ui.i18n import t
+
 from app_core.paths import AUTO_REFRESH_SECONDS, SESSION_RETENTION_DAYS
 
 
@@ -12,8 +14,7 @@ def render_header() -> None:
     with st.container(border=True):
         st.markdown("# :material/science: MolScout Remote Queue")
         st.caption(
-            "長時間を要するワークフローを共有実行するための laboratory queue です。"
-            "ユーザーセッションとサーバーモニタリング機能を備えています。"
+            t('Laboratory queue for shared execution of long-running workflows. Includes user sessions and server monitoring.')
         )
         st.markdown(
             '<span class="app-badge">1 worker</span>'

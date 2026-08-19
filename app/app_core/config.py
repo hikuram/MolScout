@@ -22,27 +22,27 @@ def _load_core_default(name: str, fallback):
 WORKFLOW_LABELS = {
     "Lite workflow": {
         "script": "molscout.py",
-        "help": "path search、TS optimization、IRC、VIB、final plots を実行します。",
+        "help": "Run path search, TS optimization, IRC, VIB, and final plots.",
         "input_mode": "reactant_product",
     },
     "Full workflow": {
         "script": "molscout.py",
-        "help": "path search、TS optimization、IRC、VIB、Energy refine(DFT)、final plots を実行します。",
+        "help": "Run path search, TS optimization, IRC, VIB, energy refinement (DFT), and final plots.",
         "input_mode": "reactant_product",
     },
     "IRC workflow only": {
         "script": "molscout.py",
-        "help": "既存 trajectory または coordinate file から TS optimization と IRC を実行します。",
+        "help": "Run TS optimization and IRC from an existing trajectory or coordinate file.",
         "input_mode": "single_input",
     },
     "VIB workflow only": {
         "script": "molscout.py",
-        "help": "既存 trajectory または coordinate file から vibrational analysis を実行します。",
+        "help": "Run vibrational analysis from an existing trajectory or coordinate file.",
         "input_mode": "single_input",
     },
     "Figure refresh only": {
         "script": "molscout.py",
-        "help": "既存 trajectory と result CSV から figures を再生成します。",
+        "help": "Regenerate figures from an existing trajectory and result CSV.",
         "input_mode": "single_input_with_result",
     },
 }

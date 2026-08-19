@@ -4,14 +4,15 @@ from __future__ import annotations
 
 import streamlit as st
 
+from app_ui.i18n import t
+
 from app_core.paths import AUTO_REFRESH_SECONDS
 
 
 st.set_page_config(page_title="MolScout [About]")
 st.markdown("# :material/science: MolScout Remote Queue")
 st.caption(
-    "長時間を要するワークフローを共有実行するための laboratory queue です。"
-    "ユーザーセッションとサーバーモニタリング機能を備えています。"
+    t('Laboratory queue for shared execution of long-running workflows. Includes user sessions and server monitoring.')
 )
 st.markdown(
     '<span class="app-badge">1 worker</span>'
@@ -24,20 +25,10 @@ st.divider()
 
 st.markdown("### Page guide")
 st.markdown(
-    """
-- **Queue**: 共有キューと選択中セッションの概要を確認します。
-- **Submit**: 反応経路探索とファイル連結処理の job を投入します。
-- **Results**: セッション内 job、ログ、結果ファイル、ZIP download を確認します。
-- **Chemiscope**: trajectory / structure を可視化します。
-- **Data**: 全セッションの成果物検索と DB/filesystem 整合性診断を行います。
-- **PySCF**: 選択中セッションの PySCF 設定を編集します。
-"""
+    t('\n- **Queue**: View the shared queue and the selected session overview.\n- **Submit**: Submit reaction-path searches and file-concatenation jobs.\n- **Results**: Inspect session jobs, logs, result files, and ZIP downloads.\n- **Chemiscope**: Visualize trajectories and structures.\n- **Data**: Search artifacts across sessions and diagnose DB/filesystem consistency.\n- **PySCF**: Edit PySCF settings for the selected session.\n')
 )
 
 st.markdown("### Sidebar")
 st.markdown(
-    """
-セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log は全 page 共通の sidebar にあります。
-期限ベースの Cleanup は PostgreSQL 移行中のため凍結しています。
-"""
+    t('\nSession creation and selection, monitoring, environment checks, sample inputs, and the worker log are available from the shared sidebar on every page.\nTime-based cleanup is disabled during the PostgreSQL migration.\n')
 )

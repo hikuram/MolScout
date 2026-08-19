@@ -1,42 +1,44 @@
 # Architecture Overview: MolScout
 
+[日本語](ja/01_architecture.md)
+
 ## 1. Repository structure
 
-MolScout は、共有 user interface と科学計算 workflow code を分離して管理します。
+MolScout keeps the shared user interface separate from the scientific workflow code.
 
-- `app/` は Streamlit UI、PostgreSQL-backed queue/session metadata、worker control、monitoring、archive utilities を含みます。
-- `core/` は calculation workflow、calculator definitions、trajectory utilities、plotting helpers、PySCF export routines、configuration defaults、bundled sample structures を含みます。
-- `docs/` は architecture、workflow、backend、environment に関する notes を含みます。
+- `app/` contains the Streamlit UI, PostgreSQL-backed queue/session metadata, worker control, monitoring, and archive utilities.
+- `core/` contains the calculation workflow, calculator definitions, trajectory utilities, plotting helpers, PySCF export routines, configuration defaults, and bundled sample structures.
+- `docs/` contains notes on architecture, workflow behavior, calculator backends, and environment setup.
 
-従来の `fircm/` directory は `core/` に置き換えています。main workflow と重複していた standalone variant scripts は削除し、application wrapper が workflow flags を設定して単一の entry point である `core/molscout.py` を起動します。
+The earlier `fircm/` directory has been replaced by `core/`. Standalone variant scripts that duplicated the main workflow have been removed; the application wrapper now sets workflow flags and launches the single maintained entry point, `core/molscout.py`.
 
 ## 2. Data-flow model
 
-MolScout は metadata と calculation files を分離した hybrid persistence model を採用します。session、job、shared queue、application state は PostgreSQL に保存し、各 calculation stage は `.traj`、`.xyz`、`.csv`、`.json`、`.molden`、figures、logs などの標準 file を介して連携します。これらの実体ファイルは project root の `data/` 以下に保持します。
+MolScout uses a hybrid persistence model that separates metadata from calculation files. Sessions, jobs, the shared queue, and application state are stored in PostgreSQL. Calculation stages communicate through standard files such as `.traj`, `.xyz`, `.csv`, `.json`, `.molden`, figures, and logs. These file payloads remain under `data/` at the project root.
 
-検索価値の高い成果物については、file content を移動せず、`data/` からの relative path、file type、role、size、modified time、manifest 由来情報だけを PostgreSQL の artifact catalog に登録します。既存 file は再スキャン可能で、新規 job は terminal state への遷移時に自動登録されます。
+For artifacts with high search value, MolScout registers only metadata in the PostgreSQL artifact catalog without moving file contents. The catalog stores the path relative to `data/`, file type, role, size, modified time, and information derived from manifests. Existing files can be rescanned, and new jobs are indexed automatically when they enter a terminal state.
 
-この設計には、以下の利点があります。
+This design has several advantages.
 
-- intermediate files を inspection、restart、manual review に利用できます。
-- downstream stage が失敗しても、既に得られた path、TS、IRC、VIB の出力を再利用しやすくなります。
-- Streamlit app は内部 Python object state に依存せず、job results を archive・表示できます。
+- Intermediate files can be inspected, restarted, and reviewed manually.
+- If a downstream stage fails, already generated path, TS, IRC, and VIB outputs remain reusable.
+- The Streamlit app can archive and display job results without depending on internal Python object state.
 
 ## 3. Central configuration
 
-`core/default_config.py` は、default workflow flags、numerical thresholds、calculator choices、logging names、output names を定義します。Streamlit wrapper はこの module を読み込み、`core/molscout.py` の実行前に job ごとの override を適用します。
+`core/default_config.py` defines default workflow flags, numerical thresholds, calculator choices, logging names, and output names. The Streamlit wrapper loads this module and applies per-job overrides before running `core/molscout.py`.
 
-これにより source tree を安定に保ちながら、queued job ごとに initial path search、TS optimization、IRC、VIB、figure refresh、refinement などの stage を選択できます。
+This keeps the source tree stable while allowing each queued job to select stages such as initial path search, TS optimization, IRC, VIB, figure refresh, and refinement.
 
 ## 4. Core workflow entry point
 
-`core/molscout.py` は、保守対象の単一 workflow entry point です。reactant/product を用いる full workflow を直接実行でき、stage-specific job については app-managed settings を受け取って実行します。これにより、IRC-only、VIB-only、figure-refresh mode ごとに script copy を維持する必要がありません。
+`core/molscout.py` is the single maintained workflow entry point. It can run the full reactant/product workflow directly, and it also accepts app-managed settings for stage-specific jobs. This avoids maintaining separate script copies for IRC-only, VIB-only, and figure-refresh modes.
 
 ## 5. Logging and traceability
 
-各 run は、operational messages と configuration values を job output directory 内の `molscout.log` に記録します。app 側では process stdout、runtime status、validation results を各 job directory に保存し、queue と job の管理 metadata は PostgreSQL に保存します。
+Each run records operational messages and configuration values in `molscout.log` inside the job output directory. The app stores process stdout, runtime status, and validation results in each job directory, while queue and job management metadata is stored in PostgreSQL.
 
-result CSV は主要な tabular output です。trajectory split、figures、JSON exports、Molden files などの追加 output は、対応する stage と backend が有効な場合に生成されます。
+The result CSV is the main tabular output. Additional outputs such as trajectory splits, figures, JSON exports, and Molden files are generated when the corresponding stage and backend are enabled.
 
 ## 6. High-level workflow
 

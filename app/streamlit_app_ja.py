@@ -1,4 +1,4 @@
-"""English launcher for the MolScout Streamlit application."""
+"""Japanese-assisted launcher for the MolScout Streamlit application."""
 
 from __future__ import annotations
 
@@ -12,4 +12,4 @@ st.set_page_config(
 
 from app_main import run_app
 
-run_app("en")
+run_app("ja")

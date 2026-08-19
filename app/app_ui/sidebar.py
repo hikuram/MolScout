@@ -8,6 +8,8 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import streamlit as st
 
+from app_ui.i18n import t, tf
+
 from app_core.paths import WORKER_LOG_FILE
 from app_core.session_manager import create_session, list_jobs, list_sessions, touch_session
 from app_core.utils import tail_text
@@ -113,18 +115,18 @@ def resolve_selected_session_id(sessions: list[dict]) -> str:
 
     return fallback
 
-@st.dialog("新規セッション作成")
+@st.dialog(t('Create new session'))
 def open_create_session_dialog() -> None:
-    owner_label = st.text_input("表示名", value="")
-    notes = st.text_input("セッションノート", value="")
-    if st.button(":material/add: 作成", type="primary", width="stretch"):
+    owner_label = st.text_input(t('Display name'), value="")
+    notes = st.text_input(t('Session notes'), value="")
+    if st.button(t(':material/add: Create'), type="primary", width="stretch"):
         session = create_session(owner_label=owner_label or "anonymous", notes=notes)
         persist_selected_session(session["session_id"])
         st.session_state[SESSION_SELECTOR_WIDGET_KEY] = session["session_id"]
         st.rerun()
 
 
-@st.dialog("環境チェック")
+@st.dialog(t('Environment check'))
 def open_dependency_dialog() -> None:
     rows = dependency_rows()
     st.dataframe(
@@ -143,18 +145,21 @@ def open_dependency_dialog() -> None:
     )
     optional_missing = [row["package"] for row in rows if row["status"] == "optional"]
     if optional_missing:
-        st.caption(f"任意依存: {', '.join(optional_missing)} は未導入でも、該当機能を使わなければ問題ありません。")
+        st.caption(tf(
+            "Optional dependencies: {packages}. These are only required for the corresponding features.",
+            packages=", ".join(optional_missing),
+        ))
     import_notes = [row["note"] for row in rows if row.get("note")]
     if import_notes:
         with st.expander("Import diagnostics", expanded=False):
             st.code("\n".join(import_notes), language="text")
 
 
-@st.dialog("サンプル入力")
+@st.dialog(t('Sample inputs'))
 def open_samples_dialog() -> None:
     sample_cases = list_sample_cases()
     if not sample_cases:
-        st.info("`core/sample_input/` に bundled sample pair が見つかりません。")
+        st.info(t('No bundled sample pairs were found under `core/sample_input/`.'))
         return
     for name in sample_cases:
         st.write(f"- `{name}`")
@@ -187,8 +192,8 @@ def render_session_sidebar() -> dict | None:
     with st.container(border=True):
         st.markdown("## :material/group_work: Session")
         if not sessions:
-            st.info("セッションはまだありません。")
-            if st.button(":material/add: セッションを作成", type="primary", width="stretch"):
+            st.info(t('No sessions yet.'))
+            if st.button(t(':material/add: Create session'), type="primary", width="stretch"):
                 open_create_session_dialog()
             return None
 
@@ -203,14 +208,14 @@ def render_session_sidebar() -> dict | None:
             for item in sessions
         }
         selected_id = st.selectbox(
-            "セッション選択",
+            t('Select session'),
             session_ids,
             key=SESSION_SELECTOR_WIDGET_KEY,
             format_func=lambda session_id: labels[session_id],
             on_change=sync_selected_session_from_widget,
         )
 
-        if st.button(":material/add: 新規セッションを追加", type="primary", width="stretch"):
+        if st.button(t(':material/add: Add new session'), type="primary", width="stretch"):
             open_create_session_dialog()
 
         session = touch_session(selected_id)
@@ -613,7 +618,7 @@ def render_database_sidebar() -> dict | None:
         with st.container(border=True):
             st.markdown("## :material/database: Database")
             if not sessions:
-                st.info("セッションはまだありません。")
+                st.info(t('No sessions yet.'))
                 if st.button(
                     ":material/refresh: Refresh",
                     width="stretch",
@@ -763,20 +768,20 @@ def render_database_sidebar() -> dict | None:
                                 )
                             )
                 elif multi_enabled:
-                    st.caption("Session Jobsテーブルから1件以上のジョブを選択してください。")
+                    st.caption(t('Select one or more jobs from the Session Jobs table.'))
             else:
                 st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = []
                 st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
                 st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
                 st.session_state.pop(DB_SELECTED_JOB_STATE_KEY, None)
                 st.session_state.pop(DB_JOB_SELECTOR_WIDGET_KEY, None)
-                st.info("このセッションにはジョブがありません。")
+                st.info(t('This session has no jobs.'))
 
             if st.button(
                 ":material/refresh: Refresh",
                 width="stretch",
                 key="database_refresh",
-                help="DBとファイルを現在の状態で読み直します。",
+                help=t('Reload the database and files from their current state.'),
             ):
                 st.session_state[DB_REFRESH_GENERATION_STATE_KEY] = (
                     int(st.session_state.get(DB_REFRESH_GENERATION_STATE_KEY, 0)) + 1
@@ -789,9 +794,9 @@ def render_database_sidebar() -> dict | None:
 def render_admin_sidebar() -> None:
     st.markdown("## :material/admin_panel_settings: Admin")
     cols = st.columns(2)
-    if cols[0].button(":material/fact_check: 環境", width="stretch"):
+    if cols[0].button(t(':material/fact_check: Environment'), width="stretch"):
         open_dependency_dialog()
-    if cols[1].button(":material/science: サンプル", width="stretch"):
+    if cols[1].button(t(':material/science: Samples'), width="stretch"):
         open_samples_dialog()
     cols = st.columns(2)
     if cols[0].button(":material/article: Log", width="stretch"):
@@ -800,7 +805,7 @@ def render_admin_sidebar() -> None:
         ":material/delete_sweep: Cleanup",
         width="stretch",
         disabled=True,
-        help="PostgreSQL移行中のためクリーンアップ機能は凍結しています。",
+        help=t('Cleanup is disabled during the PostgreSQL migration.'),
     )
 
 
