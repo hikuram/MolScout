@@ -248,5 +248,22 @@
   "molscout.log is not available yet.": "molscout.log はまだありません。",
   "{scan_type} SCAN requires {expected_count} atom indices.": "{scan_type} SCAN では atom indices を {expected_count} 個指定してください。",
   "{size} exceeds the download limit for this page. Use the file directly from the data directory.": "{size}のため、この画面からのダウンロード対象外です。dataディレクトリ上の実体を利用してください。",
-  "👆 Select one or more jobs in the table above to view details.": "👆 詳細を見るには、上のテーブルで 1 件以上のジョブを選択してください。"
+  "👆 Select one or more jobs in the table above to view details.": "👆 詳細を見るには、上のテーブルで 1 件以上のジョブを選択してください。",
+  "every {interval} SCAN steps, plus the first and last point": "SCAN {interval} step ごとに加え、最初と最後を必ず含めます",
+  "Multi-Fidelity SCAN (MF-SCAN)": "Multi-Fidelity SCAN (MF-SCAN)",
+  "Run an OrbMol constrained optimization at every SCAN point and insert PySCF constrained optimizations at periodic DFT anchor points.": "各 SCAN 点で OrbMol 拘束最適化を行い、一定間隔の DFT anchor 点で PySCF 拘束最適化を挿入します。",
+  "DFT anchor interval": "DFT anchor 間隔",
+  "The first and last SCAN points are always DFT anchors.": "最初と最後の SCAN 点は常に DFT anchor です。",
+  "**DFT anchors**": "**DFT anchors**",
+  "Each SCAN step is optimized with OrbMol first. At a DFT anchor, PySCF optimization follows immediately and that DFT geometry is propagated to the next SCAN step. `init_path` stores DFT anchors only.": "各 SCAN step はまず OrbMol で最適化します。DFT anchor では直後に PySCF 最適化を行い、その DFT 構造を次の SCAN step に引き継ぎます。`init_path` には DFT anchor のみ保存します。",
+  "**MF-SCAN calculation levels**": "**MF-SCAN 計算レベル**",
+  "DFT level": "DFT level",
+  "MLIP guide": "MLIP guide",
+  "**Execution mode**": "**実行モード**",
+  "OrbMol guide optimization → periodic PySCF anchor optimization": "OrbMol guide 最適化 → 一定間隔の PySCF anchor 最適化",
+  "MF-SCAN fixes the primary calculation level to `pyscf`. The normal Method selection is preserved and returns when MF-SCAN is disabled.": "MF-SCAN では主計算レベルを `pyscf` に固定します。通常の Method 選択は保持され、MF-SCAN を無効にすると元に戻ります。",
+  "MF-SCAN: OrbMol {orbmol_version} guides every SCAN step; PySCF follows at DFT anchors ({anchors}). Each DFT-optimized anchor is propagated into the next SCAN step.": "MF-SCAN: 各 SCAN step を OrbMol {orbmol_version} で guide し、DFT anchor ({anchors}) では続けて PySCF 最適化を行います。DFT 最適化された anchor 構造を次の SCAN step に引き継ぎます。",
+  "`init_path`: {count} DFT anchor frames only.": "`init_path`: DFT anchor の {count} frame のみ。",
+  "`init_path`: DFT anchor frames only; frame count is resolved when the SCAN range is known.": "`init_path`: DFT anchor frame のみ。frame 数は SCAN 範囲の確定後に決まります。",
+  "DFT anchor interval exceeds the number of SCAN steps; only the first and last points will be DFT anchors.": "DFT anchor interval が SCAN step 数を超えています。この場合、最初と最後の点だけが DFT anchor になります。"
 }

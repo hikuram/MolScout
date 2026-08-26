@@ -59,6 +59,8 @@ PATH_DEFAULT_KEY_MAP = {
     "NEB_CLIMB": "neb_climb",
     "SCAN_TYPE": "scan_type",
     "SCAN_STEPS": "scan_steps",
+    "SCAN_MF_ON": "scan_mf_on",
+    "SCAN_MF_INTERVAL": "scan_mf_interval",
     "USE_SELLA_IN_OPT": "use_sella_in_opt",
     "SELLA_INTERNAL_AUTO": "sella_internal_auto",
     "SELLA_INTERNAL": "sella_internal",
@@ -127,6 +129,7 @@ def parse_json_config(data: bytes) -> dict[str, Any]:
         "VIB_ON",
         "REFINE_ENERGY_ON",
         "PRESERVE_CSV_ON",
+        "SCAN_MF_ON",
     )
     for key in boolean_keys:
         if key in payload and not isinstance(payload[key], bool):
@@ -148,6 +151,22 @@ def parse_json_config(data: bytes) -> dict[str, Any]:
         raise JsonSubmissionError(
             "Figure refresh configurations are not supported by the JSON submit page."
         )
+
+    if bool(payload.get("SCAN_MF_ON", False)):
+        if not bool(payload.get("INIT_PATH_SEARCH_ON", True)):
+            raise JsonSubmissionError("SCAN_MF_ON requires INIT_PATH_SEARCH_ON=true.")
+        if str(payload.get("INIT_PATH_METHOD", "DMF")).upper() != "SCAN":
+            raise JsonSubmissionError("SCAN_MF_ON requires INIT_PATH_METHOD='SCAN'.")
+        if str(payload.get("CALC_TYPE", "")).lower() != "pyscf":
+            raise JsonSubmissionError("MF-SCAN requires CALC_TYPE='pyscf'.")
+        interval = payload.get("SCAN_MF_INTERVAL", 2)
+        if isinstance(interval, bool) or not isinstance(interval, int) or interval < 1:
+            raise JsonSubmissionError("SCAN_MF_INTERVAL must be an integer >= 1.")
+        mlip_calc_type = str(payload.get("SCAN_MF_MLIP_CALC_TYPE", "orbmol")).lower()
+        if mlip_calc_type != "orbmol":
+            raise JsonSubmissionError(
+                "MF-SCAN currently supports SCAN_MF_MLIP_CALC_TYPE='orbmol' only."
+            )
     return payload
 
 
@@ -170,6 +189,8 @@ def normalize_runtime_config(config: dict[str, Any]) -> dict[str, Any]:
     )
     if not refine_input_applicable:
         normalized["REFINE_INPUT_ON"] = False
+    if method != "SCAN":
+        normalized["SCAN_MF_ON"] = False
     return normalized
 
 
@@ -208,17 +229,25 @@ def configuration_summary(config: dict[str, Any]) -> list[dict[str, str]]:
     """Build a compact summary for the JSON submit page."""
     steps = workflow_steps(config)
     enabled = [name for name, value in steps.items() if value]
+    mf_scan_on = bool(config.get("SCAN_MF_ON", False))
+    calculator = str(config.get("CALC_TYPE", ""))
+    if mf_scan_on:
+        calculator = (
+            f"{calculator} (MF-SCAN DFT anchors; "
+            f"OrbMol {config.get('ORBMOL_VERSION', 'v2')} guide)"
+        )
+    initial_path = str(config.get("INIT_PATH_METHOD", "Disabled"))
+    if mf_scan_on and initial_path.upper() == "SCAN":
+        initial_path = f"SCAN / MF-SCAN (interval {int(config.get('SCAN_MF_INTERVAL', 2))})"
     return [
-        {"Setting": "Calculator", "Value": str(config.get("CALC_TYPE", ""))},
+        {"Setting": "Calculator", "Value": calculator},
         {
             "Setting": "Charge / multiplicity",
             "Value": f"{int(config.get('CHARGE', 0))} / {int(config.get('MULT', 1))}",
         },
         {
             "Setting": "Initial path",
-            "Value": str(config.get("INIT_PATH_METHOD", "Disabled"))
-            if steps["initial_path"]
-            else "Disabled",
+            "Value": initial_path if steps["initial_path"] else "Disabled",
         },
         {"Setting": "Workflow steps", "Value": ", ".join(enabled) or "None"},
         {"Setting": "Input mode", "Value": input_mode(config).replace("_", " ")},

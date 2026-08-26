@@ -108,6 +108,9 @@ streamlit run app/streamlit_app_ja.py
 - Dihedral twists use 4 atoms, angle wag/bend uses 3 atoms, and bond stretch/compression uses 2 atoms.
 - For `current -> current + delta` and `current + start delta -> current + end delta`, the GUI reads the current value from the reactant XYZ and converts it to `SCAN_START_VAL` / `SCAN_END_VAL` / `SCAN_STEPS` when the job is submitted.
 - Step-size input is converted to a number of divisions to match the core `SCAN_STEPS` convention. For example, a -360 -> +360 deg scan with 10 deg spacing uses 72 divisions and therefore 73 points.
+- `MF-SCAN` is available as a mode inside SCAN rather than as a separate initial-path method. It performs OrbMol constrained optimization at every SCAN point and then, at DFT anchor points, immediately performs a PySCF constrained optimization. The DFT-optimized anchor geometry is propagated into the next SCAN step.
+- When `MF-SCAN` is enabled, the primary calculation level is fixed to `pyscf`; the normal Method selection is preserved for use after MF-SCAN is disabled. The first and last SCAN points are always DFT anchors, and the intermediate anchor interval is configurable.
+- `init_path.traj` / `init_path.xyz` contain DFT anchors only. `mfscan_trace.csv` records every SCAN step together with MLIP/DFT convergence, timing, energy, and output-frame mapping.
 
 ## Constraints integration policy
 
