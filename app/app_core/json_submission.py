@@ -163,9 +163,13 @@ def parse_json_config(data: bytes) -> dict[str, Any]:
         if isinstance(interval, bool) or not isinstance(interval, int) or interval < 1:
             raise JsonSubmissionError("SCAN_MF_INTERVAL must be an integer >= 1.")
         mlip_calc_type = str(payload.get("SCAN_MF_MLIP_CALC_TYPE", "orbmol")).lower()
-        if mlip_calc_type != "orbmol":
+        if mlip_calc_type not in {"orbmol", "orbmol+alpb"}:
             raise JsonSubmissionError(
-                "MF-SCAN currently supports SCAN_MF_MLIP_CALC_TYPE='orbmol' only."
+                "MF-SCAN supports SCAN_MF_MLIP_CALC_TYPE='orbmol' or 'orbmol+alpb'."
+            )
+        if mlip_calc_type == "orbmol+alpb" and str(payload.get("ALPB_SOLVENT", "None")) == "None":
+            raise JsonSubmissionError(
+                "MF-SCAN orbmol+alpb guide requires ALPB_SOLVENT to be set."
             )
     return payload
 
@@ -232,10 +236,10 @@ def configuration_summary(config: dict[str, Any]) -> list[dict[str, str]]:
     mf_scan_on = bool(config.get("SCAN_MF_ON", False))
     calculator = str(config.get("CALC_TYPE", ""))
     if mf_scan_on:
-        calculator = (
-            f"{calculator} (MF-SCAN DFT anchors; "
-            f"OrbMol {config.get('ORBMOL_VERSION', 'v2')} guide)"
-        )
+        guide = f"OrbMol {config.get('ORBMOL_VERSION', 'v2')}"
+        if str(config.get("SCAN_MF_MLIP_CALC_TYPE", "orbmol")).lower() == "orbmol+alpb":
+            guide += f" + ALPB ({config.get('ALPB_SOLVENT', 'water')})"
+        calculator = f"{calculator} (MF-SCAN DFT anchors; {guide} guide)"
     initial_path = str(config.get("INIT_PATH_METHOD", "Disabled"))
     if mf_scan_on and initial_path.upper() == "SCAN":
         initial_path = f"SCAN / MF-SCAN (interval {int(config.get('SCAN_MF_INTERVAL', 2))})"

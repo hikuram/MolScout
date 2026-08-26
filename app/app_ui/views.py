@@ -1401,7 +1401,19 @@ def render_initial_path_live_controls(prefix: str, *, refine_input_key: str | No
             "on_change": sync_initial_path_method_defaults,
             "args": (prefix, refine_input_key),
         }
-    return st.selectbox("Initial path method", ["DMF", "NEB", "SCAN"], key=key, **kwargs)
+    init_path_method = st.selectbox("Initial path method", ["DMF", "NEB", "SCAN"], key=key, **kwargs)
+    if init_path_method == "SCAN":
+        mf_on_key = f"{prefix}_scan_mf_on"
+        st.session_state.setdefault(mf_on_key, False)
+        st.toggle(
+            t("Multi-Fidelity SCAN (MF-SCAN)"),
+            key=mf_on_key,
+            help=t(
+                "Optimize each SCAN point with OrbMol first, then run PySCF constrained "
+                "optimization at periodic DFT anchor points."
+            ),
+        )
+    return init_path_method
 
 
 def widget_default_kwargs(key: str, **defaults) -> dict:
@@ -1571,16 +1583,9 @@ def render_scan_settings(prefix: str, current_scan_value: float | None = None, c
         elif current_scan_value is not None:
             st.caption(f"Current {scan_type}: {current_scan_value:.4f} {spec['unit_label']}")
 
-        st.divider()
-        mf_scan_on = st.toggle(
-            t("Multi-Fidelity SCAN (MF-SCAN)"),
-            key=mf_on_key,
-            help=t(
-                "Run an OrbMol constrained optimization at every SCAN point and insert "
-                "PySCF constrained optimizations at periodic DFT anchor points."
-            ),
-        )
+        mf_scan_on = bool(st.session_state.get(mf_on_key, False))
         if mf_scan_on:
+            st.divider()
             mf_cols = st.columns([1, 2.2])
             mf_interval = mf_cols[0].number_input(
                 t("DFT anchor interval"),
@@ -1685,7 +1690,7 @@ def render_method_live_controls(
     with st.container(border=True):
         if mf_scan_on:
             st.markdown(t("**MF-SCAN calculation levels**"))
-            mf_cols = st.columns([1, 1.1, 2.2])
+            mf_cols = st.columns([1, 1.1, 1.35, 2.0])
             mf_cols[0].selectbox(
                 t("DFT level"),
                 ["pyscf"],
@@ -1699,16 +1704,25 @@ def render_method_live_controls(
                 format_func=lambda value: f"OrbMol {value}",
                 **({} if orbmol_key in st.session_state else {"index": orbmol_index}),
             )
-            with mf_cols[2]:
+            alpb_solvent = mf_cols[2].selectbox(
+                t("Add ALPB solvent"),
+                alpb_options,
+                key=alpb_key,
+                **selectbox_default_kwargs(alpb_key, alpb_options, "None"),
+            )
+            with mf_cols[3]:
                 st.markdown(t("**Execution mode**"))
-                st.caption(t("OrbMol guide optimization → periodic PySCF anchor optimization"))
+                guide_label = f"OrbMol {orbmol_version}"
+                if alpb_solvent != "None":
+                    guide_label += f" + ALPB ({alpb_solvent})"
+                st.caption(tf("{guide} → periodic PySCF anchor optimization", guide=guide_label))
             st.caption(
                 t(
                     "MF-SCAN fixes the primary calculation level to `pyscf`. "
-                    "The normal Method selection is preserved and returns when MF-SCAN is disabled."
+                    "OrbMol/ALPB guide settings remain visible and are preserved when MF-SCAN is toggled."
                 )
             )
-            return "pyscf", str(orbmol_version), "None", False
+            return "pyscf", str(orbmol_version), str(alpb_solvent), alpb_solvent != "None"
 
         st.markdown("**Calculation method**")
         method_cols = st.columns(4)
@@ -1757,6 +1771,7 @@ def render_workflow_preview_dialog(
     scan_mf_interval: int,
     scan_mf_steps: int | None,
     orbmol_version: str,
+    alpb_solvent: str,
 ) -> None:
     summary_cols = st.columns(3)
     with summary_cols[0]:
@@ -1810,10 +1825,13 @@ def render_workflow_preview_dialog(
     initial_path_outputs = "init_path.traj / init_path.xyz" if do_path else ""
     if do_path and init_path_method == "SCAN" and scan_mf_on:
         anchor_text = format_mfscan_anchor_steps(scan_mf_steps, scan_mf_interval)
+        guide_label = f"OrbMol {orbmol_version}"
+        if alpb_solvent != "None":
+            guide_label += f" + ALPB ({alpb_solvent})"
         initial_path_detail = tf(
-            "MF-SCAN: OrbMol {orbmol_version} guides every SCAN step; PySCF follows at DFT anchors ({anchors}). "
+            "MF-SCAN: {guide} guides every SCAN step; PySCF follows at DFT anchors ({anchors}). "
             "Each DFT-optimized anchor is propagated into the next SCAN step.",
-            orbmol_version=orbmol_version,
+            guide=guide_label,
             anchors=anchor_text,
         )
         initial_path_outputs = "init_path.traj / init_path.xyz / mfscan_trace.csv"
@@ -3207,6 +3225,7 @@ def render_job_submission(session: dict) -> None:
                 else None
             ),
             orbmol_version=str(orbmol_version),
+            alpb_solvent=str(alpb_solvent),
         )
         return
 
@@ -3223,7 +3242,7 @@ def render_job_submission(session: dict) -> None:
         if mf_scan_active
         else "orbmol+alpb" if method == "orbmol" and alpb_solvent != "None" else method
     )
-    if alpb_solvent != "None" and method != "orbmol":
+    if alpb_solvent != "None" and method != "orbmol" and not mf_scan_active:
         errors.append("Add ALPB solvent is only available when Method is 'orbmol'. Select 'None' or choose 'orbmol'.")
     try:
         scan_indices = parse_int_list(str(module_settings["scan_indices_text"]))
@@ -3338,7 +3357,9 @@ def render_job_submission(session: dict) -> None:
         "SCAN_STEPS": int(resolved_scan_settings["scan_steps"]),
         "SCAN_MF_ON": bool(mf_scan_active),
         "SCAN_MF_INTERVAL": int(module_settings.get("scan_mf_interval", 2)),
-        "SCAN_MF_MLIP_CALC_TYPE": "orbmol",
+        "SCAN_MF_MLIP_CALC_TYPE": (
+            "orbmol+alpb" if mf_scan_active and alpb_solvent != "None" else "orbmol"
+        ),
         "USE_SELLA_IN_OPT": bool(module_settings["use_sella_in_opt"]),
         "SELLA_INTERNAL_AUTO": bool(module_settings["sella_internal_auto"]),
         "SELLA_INTERNAL": bool(module_settings["sella_internal"]),

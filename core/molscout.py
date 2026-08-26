@@ -548,6 +548,8 @@ def _write_mfscan_trace(rows: list[dict]) -> None:
         "scan_type",
         "is_dft_anchor",
         "mlip_calc_type",
+        "mlip_orbmol_version",
+        "mlip_alpb_solvent",
         "mlip_converged",
         "mlip_optimizer_steps",
         "mlip_time_s",
@@ -599,14 +601,21 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
             sys.exit(
                 "abort: MF-SCAN requires CALC_TYPE='pyscf' for DFT anchor optimization."
             )
-        if mf_mlip_calc_type != "orbmol":
+        if mf_mlip_calc_type not in {"orbmol", "orbmol+alpb"}:
             sys.exit(
-                "abort: MF-SCAN currently supports SCAN_MF_MLIP_CALC_TYPE='orbmol' only."
+                "abort: MF-SCAN supports SCAN_MF_MLIP_CALC_TYPE='orbmol' or 'orbmol+alpb'."
+            )
+        if mf_mlip_calc_type == "orbmol+alpb" and str(getattr(g, "ALPB_SOLVENT", "None")) == "None":
+            sys.exit(
+                "abort: MF-SCAN orbmol+alpb guide requires ALPB_SOLVENT to be set."
             )
         mf_anchor_steps = _mfscan_anchor_steps(steps, mf_interval)
+        mf_guide_details = f"{mf_mlip_calc_type} ({getattr(g, 'ORBMOL_VERSION', 'v2')})"
+        if mf_mlip_calc_type == "orbmol+alpb":
+            mf_guide_details += f", solvent={getattr(g, 'ALPB_SOLVENT', 'water')}"
         log(
             "MFSCAN",
-            f"Enabled: MLIP guide={mf_mlip_calc_type} ({getattr(g, 'ORBMOL_VERSION', 'v2')}), "
+            f"Enabled: MLIP guide={mf_guide_details}, "
             f"DFT anchors={g.CALC_TYPE}, interval={mf_interval}, anchors={mf_anchor_steps}",
         )
         log(
@@ -678,6 +687,12 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
                 "scan_type": scan_type,
                 "is_dft_anchor": bool(is_dft_anchor),
                 "mlip_calc_type": mf_mlip_calc_type,
+                "mlip_orbmol_version": str(getattr(g, "ORBMOL_VERSION", "v2")),
+                "mlip_alpb_solvent": (
+                    str(getattr(g, "ALPB_SOLVENT", "water"))
+                    if mf_mlip_calc_type == "orbmol+alpb"
+                    else None
+                ),
                 "mlip_converged": None,
                 "mlip_optimizer_steps": None,
                 "mlip_time_s": None,
