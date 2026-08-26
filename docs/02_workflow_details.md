@@ -13,7 +13,7 @@ The initial-path stage is mainly controlled by `INIT_PATH_SEARCH_ON` and `INIT_P
 - `SCAN` performs constrained optimization along a specified bond, angle, or dihedral coordinate.
 - `CAT` concatenates user-provided trajectories or coordinate files for batch-oriented processing.
 
-SCAN can optionally enable `MF-SCAN` (`SCAN_MF_ON`). In this mode every SCAN point is first relaxed with the OrbMol MLIP. At DFT anchor steps, the MLIP-relaxed structure is immediately re-optimized with the primary `pyscf` level, and that DFT geometry becomes the starting geometry for the next SCAN point. `SCAN_MF_INTERVAL` controls intermediate anchors while the first and last SCAN points are always anchors. The canonical `init_path.traj` / `init_path.xyz` contain only DFT anchor structures; the full mixed-fidelity execution history is written to `mfscan_trace.csv`.
+SCAN can optionally enable `MF-SCAN` (`SCAN_MF_ON`). In this mode every SCAN point is first relaxed with the selected OrbMol guide; optional ALPB correction can be enabled for the guide as `orbmol+alpb`. At DFT anchor steps, the MLIP-relaxed structure is immediately re-optimized with the primary `pyscf` level, and that DFT geometry becomes the starting geometry for the next SCAN point. `SCAN_MF_INTERVAL` controls intermediate anchors while the first and last SCAN points are always anchors. The canonical `init_path.traj` / `init_path.xyz` contain only DFT anchor structures; the full mixed-fidelity execution history is written to `mfscan_trace.csv`.
 
 The generated path is written as `init_path.traj`, converted to coordinate files where needed, and summarized in the result CSV.
 

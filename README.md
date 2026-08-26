@@ -9,7 +9,7 @@ This repository is centered on a Streamlit application for shared execution and 
 ## Key features
 
 - Initial-path generation with DMF, NEB, SCAN, or concatenated trajectories
-- Multi-fidelity SCAN (MF-SCAN) with OrbMol-guided intermediate steps and periodic PySCF DFT anchors
+- Multi-fidelity SCAN (MF-SCAN) with OrbMol/optional-ALPB guide steps and periodic PySCF DFT anchors
 - Transition-state optimization and adaptive IRC calculations with ASE / Sella
 - Vibrational analysis and thermochemical evaluation with handling for low-frequency and numerical artifacts
 - Calculator backends for OrbMol, xTB/ALPB delta correction, PySCF, and gpu4pyscf-assisted calculations

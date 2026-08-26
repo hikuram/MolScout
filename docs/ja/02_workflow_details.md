@@ -13,7 +13,7 @@ initial path stage は、主に `INIT_PATH_SEARCH_ON` と `INIT_PATH_METHOD` で
 - `SCAN` は指定した bond、angle、dihedral coordinate に沿って constrained optimization を行います。
 - `CAT` は user-provided trajectories または coordinate files を連結し、batch-oriented processing に利用します。
 
-SCAN では optional mode として `MF-SCAN` (`SCAN_MF_ON`) を有効化できます。このモードでは各 SCAN 点をまず OrbMol MLIP で緩和し、DFT anchor step ではその直後に主計算レベル `pyscf` で再最適化します。得られた DFT 構造は次の SCAN 点の初期構造として引き継ぎます。`SCAN_MF_INTERVAL` は中間 anchor の間隔を指定し、最初と最後の SCAN 点は常に anchor です。正本となる `init_path.traj` / `init_path.xyz` には DFT anchor 構造だけを保存し、mixed-fidelity の全実行履歴は `mfscan_trace.csv` に記録します。
+SCAN では optional mode として `MF-SCAN` (`SCAN_MF_ON`) を有効化できます。このモードでは各 SCAN 点をまず選択した OrbMol guide で緩和します。guide には必要に応じて ALPB 補正 (`orbmol+alpb`) を有効化できます。その後、DFT anchor step ではその直後に主計算レベル `pyscf` で再最適化します。得られた DFT 構造は次の SCAN 点の初期構造として引き継ぎます。`SCAN_MF_INTERVAL` は中間 anchor の間隔を指定し、最初と最後の SCAN 点は常に anchor です。正本となる `init_path.traj` / `init_path.xyz` には DFT anchor 構造だけを保存し、mixed-fidelity の全実行履歴は `mfscan_trace.csv` に記録します。
 
 生成された path は `init_path.traj` として保存され、必要に応じて coordinate files に変換され、result CSV に要約されます。
 

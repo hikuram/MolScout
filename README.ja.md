@@ -9,7 +9,7 @@ MolScout は、反応経路探索と後続の分子計算を自動化するた�
 ## 主な機能
 
 - DMF、NEB、SCAN、または連結済み trajectory による初期経路生成
-- OrbMol で中間 step を guide し、PySCF DFT anchor を周期的に挿入する Multi-Fidelity SCAN (MF-SCAN)
+- OrbMol（任意で ALPB 補正）で中間 step を guide し、PySCF DFT anchor を周期的に挿入する Multi-Fidelity SCAN (MF-SCAN)
 - ASE / Sella を用いた transition-state optimization と adaptive IRC 計算
 - 低振動数・数値誤差に配慮した vibrational analysis と熱化学量評価
 - OrbMol、xTB/ALPB delta correction、PySCF、gpu4pyscf 支援計算に対応した calculator backend
