@@ -530,6 +530,24 @@ def _set_scan_coordinate(atoms: Atoms, scan_type: str, indices: List[int], value
         return FixInternals(dihedrals_deg=[[value, indices]])
     sys.exit(f"abort: Unknown SCAN_TYPE: {scan_type}")
 
+def _make_scan_optimizer(atoms: Atoms, logfile: str):
+    """Create the configured minimizer for constrained SCAN optimization.
+
+    Sella reads supported ASE constraints (including FixInternals and FixAtoms)
+    from ``atoms.constraints`` when its own ``constraints`` argument is left as
+    ``None``. Using order=0 selects minimum optimization rather than TS search.
+    """
+    if getattr(g, "USE_SELLA_IN_OPT", False):
+        return Sella(
+            atoms,
+            internal=g.SELLA_INTERNAL,
+            order=0,
+            constraints=None,
+            logfile=logfile,
+        )
+    return LBFGS(atoms, logfile=logfile)
+
+
 def _mfscan_anchor_steps(steps: int, interval: int) -> List[int]:
     """Return sorted MF-SCAN DFT anchor steps, always including both endpoints."""
     if interval < 1:
@@ -550,11 +568,13 @@ def _write_mfscan_trace(rows: list[dict]) -> None:
         "mlip_calc_type",
         "mlip_orbmol_version",
         "mlip_alpb_solvent",
+        "mlip_optimizer",
         "mlip_converged",
         "mlip_optimizer_steps",
         "mlip_time_s",
         "mlip_energy_ev",
         "dft_calc_type",
+        "dft_optimizer",
         "dft_converged",
         "dft_optimizer_steps",
         "dft_time_s",
@@ -595,6 +615,8 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
     mf_interval = int(getattr(g, "SCAN_MF_INTERVAL", 2))
     mf_mlip_calc_type = str(getattr(g, "SCAN_MF_MLIP_CALC_TYPE", "orbmol")).lower()
     mf_anchor_steps: list[int] = []
+    scan_optimizer_name = "Sella" if getattr(g, "USE_SELLA_IN_OPT", False) else "LBFGS"
+    log("SCAN", f"Constrained optimization uses {scan_optimizer_name} (fmax={g.OPT_FMAX}).")
 
     if mf_scan_on:
         if str(g.CALC_TYPE).lower() != "pyscf":
@@ -664,7 +686,7 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
             if not mf_scan_on:
                 current_atoms.calc = make_calculator(g.CALC_TYPE, current_atoms, f"SCAN_opt_{step}")
                 try:
-                    opt = LBFGS(current_atoms, logfile=f"SCAN_opt_{step}.log")
+                    opt = _make_scan_optimizer(current_atoms, logfile=f"SCAN_opt_{step}.log")
                     converged = bool(opt.run(fmax=g.OPT_FMAX, steps=500))
                     if not converged:
                         log(
@@ -693,11 +715,13 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
                     if mf_mlip_calc_type == "orbmol+alpb"
                     else None
                 ),
+                "mlip_optimizer": scan_optimizer_name,
                 "mlip_converged": None,
                 "mlip_optimizer_steps": None,
                 "mlip_time_s": None,
                 "mlip_energy_ev": None,
                 "dft_calc_type": str(g.CALC_TYPE) if is_dft_anchor else None,
+                "dft_optimizer": scan_optimizer_name if is_dft_anchor else None,
                 "dft_converged": None,
                 "dft_optimizer_steps": None,
                 "dft_time_s": None,
@@ -714,7 +738,7 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
                     current_atoms,
                     f"MFSCAN_mlip_{step}",
                 )
-                opt_mlip = LBFGS(current_atoms, logfile=f"MFSCAN_mlip_{step}.log")
+                opt_mlip = _make_scan_optimizer(current_atoms, logfile=f"MFSCAN_mlip_{step}.log")
                 mlip_converged = bool(opt_mlip.run(fmax=g.OPT_FMAX, steps=500))
                 mlip_time = timepfc() - mlip_start
                 mf_mlip_total += mlip_time
@@ -747,7 +771,7 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
                         current_atoms,
                         f"MFSCAN_dft_{step}",
                     )
-                    opt_dft = LBFGS(current_atoms, logfile=f"MFSCAN_dft_{step}.log")
+                    opt_dft = _make_scan_optimizer(current_atoms, logfile=f"MFSCAN_dft_{step}.log")
                     dft_converged = bool(opt_dft.run(fmax=g.OPT_FMAX, steps=500))
                     dft_time = timepfc() - dft_start
                     mf_dft_total += dft_time
