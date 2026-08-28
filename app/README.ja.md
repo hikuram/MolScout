@@ -106,6 +106,9 @@ streamlit run app/streamlit_app_ja.py
 - Dihedral twist は 4 原子、angle wag / bend は 3 原子、bond stretch / compression は 2 原子を指定します。
 - `current -> current + delta` や `current + start delta -> current + end delta` は、reactant XYZ の現在値を GUI 側で読み取り、job 投入時に `SCAN_START_VAL` / `SCAN_END_VAL` / `SCAN_STEPS` へ変換します。
 - 刻み幅指定は、core の `SCAN_STEPS` 仕様に合わせて分割数へ変換します。たとえば 10 deg 刻みの -360 -> +360 deg は 72 分割、73 点として実行されます。
+- `MF-SCAN` は独立した initial-path method ではなく、SCAN 内部の実行モードとして提供します。各 SCAN 点を OrbMol で拘束最適化し、DFT anchor 点では直後に PySCF 拘束最適化を行います。DFT 最適化された anchor 構造を次の SCAN step の初期構造として引き継ぎます。
+- `MF-SCAN` 有効時は主計算レベルを `pyscf` に固定します。MLIP guide 用の OrbMol version と任意の ALPB solvent は常に表示し、通常の Method 選択値も保持して MF-SCAN を無効にすると元に戻します。最初と最後の SCAN 点は必ず DFT anchor とし、中間 anchor の間隔を設定できます。
+- `init_path.traj` / `init_path.xyz` には DFT anchor だけを保存します。`mfscan_trace.csv` には全 SCAN step の MLIP/DFT 収束状態、計算時間、energy、出力 frame 対応を記録します。
 
 ## Constraints integration policy
 

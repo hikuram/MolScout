@@ -161,12 +161,12 @@ def save_session(payload: dict) -> None:
 
 
 def touch_session(session_id: str) -> dict | None:
+    """Record session access without changing its content update timestamp."""
     payload = get_session(session_id)
     if not payload:
         return None
     payload["last_accessed_at"] = now_iso()
-    payload["updated_at"] = now_iso()
-    save_session(payload)
+    write_session_payload(payload)
     return payload
 
 

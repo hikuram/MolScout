@@ -63,6 +63,12 @@ SCAN_INDICES: list = [0, 1]  # Atom indices (0-indexed). e.g., [0, 1] for bond, 
 SCAN_START_VAL: float = None # If None, the initial value of the reactant geometry is used
 SCAN_END_VAL: float = 2.0    # Target value (Angstrom for bond, degree for angle/dihedral)
 SCAN_STEPS: int = 10
+# Multi-fidelity SCAN: OrbMol or OrbMol+ALPB guide optimization at every SCAN point,
+# followed by PySCF optimization at periodic anchor points.
+SCAN_MF_ON: bool = False
+SCAN_MF_INTERVAL: int = 2
+SCAN_MF_MLIP_CALC_TYPE: str = "orbmol"
+SCAN_MF_TRACE_NAME: str = "mfscan_trace.csv"
 # -Sella
 SELLA_INTERNAL_AUTO: bool = True
 SELLA_INTERNAL: bool = True

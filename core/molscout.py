@@ -530,6 +530,64 @@ def _set_scan_coordinate(atoms: Atoms, scan_type: str, indices: List[int], value
         return FixInternals(dihedrals_deg=[[value, indices]])
     sys.exit(f"abort: Unknown SCAN_TYPE: {scan_type}")
 
+def _make_scan_optimizer(atoms: Atoms, logfile: str):
+    """Create the configured minimizer for constrained SCAN optimization.
+
+    Sella reads supported ASE constraints (including FixInternals and FixAtoms)
+    from ``atoms.constraints`` when its own ``constraints`` argument is left as
+    ``None``. Using order=0 selects minimum optimization rather than TS search.
+    """
+    if getattr(g, "USE_SELLA_IN_OPT", False):
+        return Sella(
+            atoms,
+            internal=g.SELLA_INTERNAL,
+            order=0,
+            constraints=None,
+            logfile=logfile,
+        )
+    return LBFGS(atoms, logfile=logfile)
+
+
+def _mfscan_anchor_steps(steps: int, interval: int) -> List[int]:
+    """Return sorted MF-SCAN DFT anchor steps, always including both endpoints."""
+    if interval < 1:
+        sys.exit(f"abort: SCAN_MF_INTERVAL must be 1 or larger: {interval}")
+    anchors = set(range(0, steps + 1, interval))
+    anchors.add(0)
+    anchors.add(steps)
+    return sorted(anchors)
+
+
+def _write_mfscan_trace(rows: list[dict]) -> None:
+    """Write the per-step MF-SCAN trace without changing the canonical init_path output."""
+    columns = [
+        "scan_step",
+        "scan_target",
+        "scan_type",
+        "is_dft_anchor",
+        "mlip_calc_type",
+        "mlip_orbmol_version",
+        "mlip_alpb_solvent",
+        "mlip_optimizer",
+        "mlip_converged",
+        "mlip_optimizer_steps",
+        "mlip_time_s",
+        "mlip_energy_ev",
+        "dft_calc_type",
+        "dft_optimizer",
+        "dft_converged",
+        "dft_optimizer_steps",
+        "dft_time_s",
+        "dft_energy_ev",
+        "init_path_frame",
+        "status",
+        "message",
+    ]
+    trace_name = str(getattr(g, "SCAN_MF_TRACE_NAME", "mfscan_trace.csv"))
+    pd.DataFrame(rows, columns=columns).to_csv(trace_name, index=False)
+    log("I/O", f"Wrote {trace_name} (MF-SCAN execution trace, {len(rows)} rows)")
+
+
 def generate_path_scan(reactant_atoms: Atoms) -> None:
     images = []
     current_atoms = reactant_atoms.copy()
@@ -553,6 +611,41 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
 
     end_val = g.SCAN_END_VAL
     steps = g.SCAN_STEPS
+    mf_scan_on = bool(getattr(g, "SCAN_MF_ON", False))
+    mf_interval = int(getattr(g, "SCAN_MF_INTERVAL", 2))
+    mf_mlip_calc_type = str(getattr(g, "SCAN_MF_MLIP_CALC_TYPE", "orbmol")).lower()
+    mf_anchor_steps: list[int] = []
+    scan_optimizer_name = "Sella" if getattr(g, "USE_SELLA_IN_OPT", False) else "LBFGS"
+    log("SCAN", f"Constrained optimization uses {scan_optimizer_name} (fmax={g.OPT_FMAX}).")
+
+    if mf_scan_on:
+        if str(g.CALC_TYPE).lower() != "pyscf":
+            sys.exit(
+                "abort: MF-SCAN requires CALC_TYPE='pyscf' for DFT anchor optimization."
+            )
+        if mf_mlip_calc_type not in {"orbmol", "orbmol+alpb"}:
+            sys.exit(
+                "abort: MF-SCAN supports SCAN_MF_MLIP_CALC_TYPE='orbmol' or 'orbmol+alpb'."
+            )
+        if mf_mlip_calc_type == "orbmol+alpb" and str(getattr(g, "ALPB_SOLVENT", "None")) == "None":
+            sys.exit(
+                "abort: MF-SCAN orbmol+alpb guide requires ALPB_SOLVENT to be set."
+            )
+        mf_anchor_steps = _mfscan_anchor_steps(steps, mf_interval)
+        mf_guide_details = f"{mf_mlip_calc_type} ({getattr(g, 'ORBMOL_VERSION', 'v2')})"
+        if mf_mlip_calc_type == "orbmol+alpb":
+            mf_guide_details += f", solvent={getattr(g, 'ALPB_SOLVENT', 'water')}"
+        log(
+            "MFSCAN",
+            f"Enabled: MLIP guide={mf_guide_details}, "
+            f"DFT anchors={g.CALC_TYPE}, interval={mf_interval}, anchors={mf_anchor_steps}",
+        )
+        log(
+            "MFSCAN",
+            "Each SCAN step is optimized with the MLIP first. At anchor steps, PySCF "
+            "optimization follows immediately and its optimized geometry becomes the starting "
+            "geometry for the next SCAN step. init_path stores DFT anchors only.",
+        )
 
     # --- Prepare Fixed Atoms Constraint ---
     fixed_constraint = None
@@ -561,41 +654,168 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
         log("Path", f"Applied FixAtoms constraint to SCAN: {g.FIXED_ATOMS}")
     # --------------------------------------
 
-    # Write directly to Trajectory to preserve computed energies and forces
+    # Write directly to Trajectory to preserve computed energies and forces.
+    # In MF-SCAN mode only DFT anchor structures are written here.
     traj_writer = Trajectory('init_path.traj', 'w')
+    mf_trace_rows: list[dict] = []
+    mf_mlip_total = 0.0
+    mf_dft_total = 0.0
+    init_path_frame = 0
 
-    for step in range(steps + 1):
-        val = start_val + (end_val - start_val) * step / steps
-        log("SCAN", f"Step {step}/{steps} - Target {scan_type}: {val:.3f}")
+    try:
+        for step in range(steps + 1):
+            val = start_val + (end_val - start_val) * step / steps
+            is_dft_anchor = mf_scan_on and step in mf_anchor_steps
+            log("SCAN", f"Step {step}/{steps} - Target {scan_type}: {val:.3f}")
 
-        current_atoms.set_constraint()
-        cons = _set_scan_coordinate(current_atoms, scan_type, scan_indices, val)
+            current_atoms.set_constraint()
+            cons = _set_scan_coordinate(current_atoms, scan_type, scan_indices, val)
 
-        all_constraints = [cons]
-        if fixed_constraint:
-            all_constraints.append(fixed_constraint)
-        current_atoms.set_constraint(all_constraints)
+            all_constraints = [cons]
+            if fixed_constraint:
+                all_constraints.append(fixed_constraint)
+            current_atoms.set_constraint(all_constraints)
 
-        current_atoms.info["charge"] = g.CHARGE
-        current_atoms.info["spin"] = g.MULT
-        current_atoms.calc = make_calculator(g.CALC_TYPE, current_atoms, f"SCAN_opt_{step}")
+            current_atoms.info["charge"] = g.CHARGE
+            current_atoms.info["spin"] = g.MULT
+            current_atoms.info["scan_step"] = step
+            current_atoms.info["scan_target"] = float(val)
+            current_atoms.info["scan_type"] = scan_type
+            current_atoms.info["mfscan_anchor"] = bool(is_dft_anchor)
 
-        try:
-            opt = LBFGS(current_atoms, logfile=f"SCAN_opt_{step}.log")
-            opt.run(fmax=g.OPT_FMAX, steps=500)
-            
-            # Serialize the fully calculated state to disk immediately
-            traj_writer.write(current_atoms)
-            
-            # Keep a lightweight copy for the XYZ export array
-            images.append(current_atoms.copy())
-            
-        except Exception as e:
-            log("Warn", f"SCAN optimization failed at step {step} (target: {val:.3f}). Error: {e}")
-            log("Warn", "Stopping SCAN early, but preserving successfully generated path.")
-            break
+            if not mf_scan_on:
+                current_atoms.calc = make_calculator(g.CALC_TYPE, current_atoms, f"SCAN_opt_{step}")
+                try:
+                    opt = _make_scan_optimizer(current_atoms, logfile=f"SCAN_opt_{step}.log")
+                    converged = bool(opt.run(fmax=g.OPT_FMAX, steps=500))
+                    if not converged:
+                        log(
+                            "Warn",
+                            f"SCAN optimization reached the step limit at step {step} "
+                            f"(target: {val:.3f}). Preserving the current structure.",
+                        )
 
-    traj_writer.close()
+                    traj_writer.write(current_atoms)
+                    images.append(current_atoms.copy())
+                except Exception as e:
+                    log("Warn", f"SCAN optimization failed at step {step} (target: {val:.3f}). Error: {e}")
+                    log("Warn", "Stopping SCAN early, but preserving successfully generated path.")
+                    break
+                continue
+
+            row = {
+                "scan_step": step,
+                "scan_target": float(val),
+                "scan_type": scan_type,
+                "is_dft_anchor": bool(is_dft_anchor),
+                "mlip_calc_type": mf_mlip_calc_type,
+                "mlip_orbmol_version": str(getattr(g, "ORBMOL_VERSION", "v2")),
+                "mlip_alpb_solvent": (
+                    str(getattr(g, "ALPB_SOLVENT", "water"))
+                    if mf_mlip_calc_type == "orbmol+alpb"
+                    else None
+                ),
+                "mlip_optimizer": scan_optimizer_name,
+                "mlip_converged": None,
+                "mlip_optimizer_steps": None,
+                "mlip_time_s": None,
+                "mlip_energy_ev": None,
+                "dft_calc_type": str(g.CALC_TYPE) if is_dft_anchor else None,
+                "dft_optimizer": scan_optimizer_name if is_dft_anchor else None,
+                "dft_converged": None,
+                "dft_optimizer_steps": None,
+                "dft_time_s": None,
+                "dft_energy_ev": None,
+                "init_path_frame": None,
+                "status": "running",
+                "message": "",
+            }
+
+            mlip_start = timepfc()
+            try:
+                current_atoms.calc = make_calculator(
+                    mf_mlip_calc_type,
+                    current_atoms,
+                    f"MFSCAN_mlip_{step}",
+                )
+                opt_mlip = _make_scan_optimizer(current_atoms, logfile=f"MFSCAN_mlip_{step}.log")
+                mlip_converged = bool(opt_mlip.run(fmax=g.OPT_FMAX, steps=500))
+                mlip_time = timepfc() - mlip_start
+                mf_mlip_total += mlip_time
+                row["mlip_converged"] = mlip_converged
+                row["mlip_optimizer_steps"] = int(opt_mlip.get_number_of_steps())
+                row["mlip_time_s"] = mlip_time
+                row["mlip_energy_ev"] = float(current_atoms.get_potential_energy())
+                if not mlip_converged:
+                    log(
+                        "Warn",
+                        f"MF-SCAN MLIP optimization reached the step limit at step {step} "
+                        f"(target: {val:.3f}). Continuing from the current structure.",
+                    )
+            except Exception as e:
+                mlip_time = timepfc() - mlip_start
+                mf_mlip_total += mlip_time
+                row["mlip_time_s"] = mlip_time
+                row["status"] = "mlip_failed"
+                row["message"] = f"{type(e).__name__}: {e}"
+                mf_trace_rows.append(row)
+                log("Warn", f"MF-SCAN MLIP optimization failed at step {step} (target: {val:.3f}). Error: {e}")
+                log("Warn", "Stopping MF-SCAN early, but preserving successfully generated DFT anchors.")
+                break
+
+            if is_dft_anchor:
+                dft_start = timepfc()
+                try:
+                    current_atoms.calc = make_calculator(
+                        g.CALC_TYPE,
+                        current_atoms,
+                        f"MFSCAN_dft_{step}",
+                    )
+                    opt_dft = _make_scan_optimizer(current_atoms, logfile=f"MFSCAN_dft_{step}.log")
+                    dft_converged = bool(opt_dft.run(fmax=g.OPT_FMAX, steps=500))
+                    dft_time = timepfc() - dft_start
+                    mf_dft_total += dft_time
+                    row["dft_converged"] = dft_converged
+                    row["dft_optimizer_steps"] = int(opt_dft.get_number_of_steps())
+                    row["dft_time_s"] = dft_time
+                    row["dft_energy_ev"] = float(current_atoms.get_potential_energy())
+                    if not dft_converged:
+                        log(
+                            "Warn",
+                            f"MF-SCAN DFT optimization reached the step limit at anchor step {step} "
+                            f"(target: {val:.3f}). Preserving the current DFT structure.",
+                        )
+
+                    # The DFT-optimized state is both the canonical output frame and the
+                    # geometry propagated into the next MLIP SCAN step.
+                    traj_writer.write(current_atoms)
+                    images.append(current_atoms.copy())
+                    row["init_path_frame"] = init_path_frame
+                    init_path_frame += 1
+                except Exception as e:
+                    dft_time = timepfc() - dft_start
+                    mf_dft_total += dft_time
+                    row["dft_time_s"] = dft_time
+                    row["status"] = "dft_failed"
+                    row["message"] = f"{type(e).__name__}: {e}"
+                    mf_trace_rows.append(row)
+                    log("Warn", f"MF-SCAN DFT optimization failed at anchor step {step} (target: {val:.3f}). Error: {e}")
+                    log("Warn", "Stopping MF-SCAN early, but preserving successfully generated DFT anchors.")
+                    break
+
+            row["status"] = "ok"
+            mf_trace_rows.append(row)
+    finally:
+        traj_writer.close()
+        if mf_scan_on:
+            _write_mfscan_trace(mf_trace_rows)
+            write_line(g.TIME_LOG_NAME, f"* MFSCAN_MLIP_Total      | {mf_mlip_total:>12.2f} s  *\n")
+            write_line(g.TIME_LOG_NAME, f"* MFSCAN_DFT_Total       | {mf_dft_total:>12.2f} s  *\n")
+            log(
+                "MFSCAN",
+                f"Timing summary: MLIP {mf_mlip_total:.2f} s / DFT {mf_dft_total:.2f} s / "
+                f"DFT frames {len(images)}/{len(mf_anchor_steps)}",
+            )
 
     if not images:
         log("Fail", "SCAN failed to generate any valid images.")
@@ -604,7 +824,14 @@ def generate_path_scan(reactant_atoms: Atoms) -> None:
     traj_to_xyz(images, 'init_path.xyz')
     write_energies('init_path.traj', g.R_CSV)
     g.SUGGESTIONS.append(f"ase gui {g.CURRENT_DIR}/init_path.traj")
-    log("I/O", f"Wrote init_path.traj and init_path.xyz (Total frames: {len(images)})")
+    if mf_scan_on:
+        log(
+            "I/O",
+            f"Wrote init_path.traj and init_path.xyz with DFT anchors only "
+            f"(frames: {len(images)}; planned anchors: {len(mf_anchor_steps)})",
+        )
+    else:
+        log("I/O", f"Wrote init_path.traj and init_path.xyz (Total frames: {len(images)})")
 
 # Write text file
 def write_line(txtfile_name, txt):
