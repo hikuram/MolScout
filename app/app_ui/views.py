@@ -1679,7 +1679,24 @@ def render_method_live_controls(
     orbmol_key = f"{prefix}_orbmol_version"
     alpb_key = f"{prefix}_alpb_solvent"
     ui_method_options = [m for m in METHOD_OPTIONS if m != "orbmol+alpb"]
-    alpb_options = ["None", "water", "acetonitrile", "methanol", "ethanol", "dichloromethane"]
+    alpb_options = [
+        "None",
+        "water",
+        "acetonitrile",
+        "methanol",
+        "ethanol",
+        "ch2cl2",
+        "thf",
+        "toluene",
+        "dmf",
+        "dmso",
+        "acetone",
+        "dioxane",
+        "ether",
+    ]
+    alpb_labels = {
+        "ch2cl2": "ch2cl2 (dichloromethane)",
+    }
     st.session_state.setdefault(custom_key, "orbmol")
 
     if DEFAULT_ORBMOL_VERSION in ORBMOL_VERSION_OPTIONS:
@@ -1708,6 +1725,7 @@ def render_method_live_controls(
                 t("Add ALPB solvent"),
                 alpb_options,
                 key=alpb_key,
+                format_func=lambda value: alpb_labels.get(value, value),
                 **selectbox_default_kwargs(alpb_key, alpb_options, "None"),
             )
             with mf_cols[3]:
@@ -1747,6 +1765,7 @@ def render_method_live_controls(
             alpb_options,
             key=alpb_key,
             disabled=not is_orbmol,
+            format_func=lambda value: alpb_labels.get(value, value),
             **selectbox_default_kwargs(alpb_key, alpb_options, "None"),
         )
     return method, str(orbmol_version), str(alpb_solvent), is_orbmol and alpb_solvent != "None"
