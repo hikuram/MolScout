@@ -94,21 +94,22 @@ def resolve_selected_session_id(sessions: list[dict]) -> str:
         persist_selected_session(url_session)
         return url_session
 
-    # 3. Check the widget. This keeps the per-browser Streamlit state isolated.
-    widget_session = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
-    if widget_session in session_ids:
-        local_session = st.session_state.get(SELECTED_SESSION_STATE_KEY)
-        if widget_session != local_session:
-            persist_selected_session(str(widget_session))
-        return str(widget_session)
-
-    # 4. Check Session State
+    # 3. Prefer the canonical per-browser selection. Database-style pages also
+    #    update this state, so page navigation keeps the user's own session.
     local_session = st.session_state.get(SELECTED_SESSION_STATE_KEY)
     if local_session in session_ids:
         persist_selected_session(str(local_session))
-        return local_session
+        return str(local_session)
 
-    # 5. Fallback to first session
+    # 4. Fall back to the queue widget state. This primarily preserves state
+    #    across hot reloads or older browser sessions where only the widget key
+    #    was populated. Fresh widget changes are handled by step 1 above.
+    widget_session = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
+    if widget_session in session_ids:
+        persist_selected_session(str(widget_session))
+        return str(widget_session)
+
+    # 5. Fallback to first session only when this browser has no valid choice.
     fallback = session_ids[0] if session_ids else ""
     if fallback:
         persist_selected_session(fallback)
@@ -259,6 +260,8 @@ def _apply_database_query_target(sessions: list[dict]) -> None:
     if session_id in session_ids:
         jobs = list_jobs(session_id)
         job_ids = {str(item.get("job_id") or "") for item in jobs}
+        # A database deep link is an explicit browser-local session choice.
+        st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
         st.session_state[DB_SELECTED_SESSION_STATE_KEY] = session_id
         st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = session_id
         if job_id in job_ids:
@@ -301,14 +304,30 @@ def database_page_url(page_path: str, session_id: str, job_id: str) -> str:
 
 
 def _resolve_database_session_id(sessions: list[dict]) -> str:
+    """Resolve the database page session from the browser-wide selection.
+
+    Session choice is shared across MolScout pages within one Streamlit browser
+    session, while job focus remains specific to the database-style pages.
+    """
     session_ids = [str(item["session_id"]) for item in sessions]
-    selected = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
+
+    # The browser-wide selection is canonical across Queue/Submit/PySCF and
+    # Results/Chemiscope/Data.
+    selected = str(st.session_state.get(SELECTED_SESSION_STATE_KEY) or "")
     if selected in session_ids:
+        st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected
         return selected
 
-    queue_selected = str(st.session_state.get(SELECTED_SESSION_STATE_KEY) or "")
-    fallback = queue_selected if queue_selected in session_ids else (session_ids[0] if session_ids else "")
+    # Compatibility fallback for a browser session created by an older build.
+    database_selected = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
+    if database_selected in session_ids:
+        st.session_state[SELECTED_SESSION_STATE_KEY] = database_selected
+        return database_selected
+
+    # Only a browser with no valid prior choice falls back to the newest session.
+    fallback = session_ids[0] if session_ids else ""
     if fallback:
+        st.session_state[SELECTED_SESSION_STATE_KEY] = fallback
         st.session_state[DB_SELECTED_SESSION_STATE_KEY] = fallback
     return fallback
 
@@ -317,6 +336,7 @@ def _sync_database_session_from_widget() -> None:
     selected = str(st.session_state.get(DB_SESSION_SELECTOR_WIDGET_KEY) or "")
     if not selected:
         return
+    st.session_state[SELECTED_SESSION_STATE_KEY] = selected
     st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = ""
     st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
@@ -372,9 +392,10 @@ def database_job_selection() -> tuple[str, list[str]]:
 
 
 def set_database_selection(session_id: str, job_id: str = "") -> None:
-    """Set the database browsing target without changing the queue session."""
+    """Set the database browsing target and browser-wide session choice."""
     normalized_session_id = str(session_id or "")
     normalized_job_id = str(job_id or "")
+    st.session_state[SELECTED_SESSION_STATE_KEY] = normalized_session_id
     st.session_state[DB_SELECTED_SESSION_STATE_KEY] = normalized_session_id
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = normalized_job_id
     st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
@@ -414,6 +435,7 @@ def _apply_pending_database_multi_selection(sessions: list[dict]) -> None:
         return
 
     active_job_id = selected_job_ids[0]
+    st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
     st.session_state[DB_SELECTED_SESSION_STATE_KEY] = session_id
     st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = session_id
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = active_job_id
@@ -609,7 +631,7 @@ def _render_selected_jobs_archive(
 
 
 def render_database_sidebar() -> dict | None:
-    """Render database browsing context without changing the queue session."""
+    """Render database browsing context using the browser-wide session choice."""
     sessions = list_sessions()
     _apply_database_query_target(sessions)
     _apply_pending_database_multi_selection(sessions)
@@ -648,6 +670,8 @@ def render_database_sidebar() -> dict | None:
                 format_func=lambda session_id: session_labels[session_id],
                 on_change=_sync_database_session_from_widget,
             )
+            # Keep session choice browser-local but common across all pages.
+            st.session_state[SELECTED_SESSION_STATE_KEY] = selected_session_id
             st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected_session_id
 
             jobs = list_jobs(selected_session_id)
