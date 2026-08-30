@@ -29,7 +29,6 @@ APPLIED_QUERY_SESSION_STATE_KEY = "selected_session_query_applied"
 PENDING_WIDGET_SESSION_STATE_KEY = "selected_session_widget_pending"
 
 DB_SELECTED_SESSION_STATE_KEY = "database_selected_session_id"
-DB_SESSION_SELECTOR_WIDGET_KEY = "database_session_selector_id"
 DB_SELECTED_JOB_STATE_KEY = "database_selected_job_id"
 DB_JOB_SELECTOR_WIDGET_KEY = "database_job_selector_id"
 DB_REFRESH_GENERATION_STATE_KEY = "database_refresh_generation"
@@ -53,11 +52,28 @@ def current_query_session_id() -> str:
     return str(raw_value or "")
 
 
+def _reset_database_job_selection() -> None:
+    """Clear database-page job focus after the shared session changes."""
+    st.session_state[DB_SELECTED_JOB_STATE_KEY] = ""
+    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
+    st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
+    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = []
+    st.session_state.pop(DB_JOB_TABLE_SYNC_STATE_KEY, None)
+
+
 def persist_selected_session(session_id: str) -> None:
-    """Keep internal state and URL params in sync."""
-    st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
-    st.session_state[APPLIED_QUERY_SESSION_STATE_KEY] = session_id
-    st.query_params[SESSION_QUERY_PARAM_KEY] = session_id
+    """Keep the browser-local session choice and URL params in sync."""
+    previous = str(st.session_state.get(SELECTED_SESSION_STATE_KEY) or "")
+    normalized = str(session_id or "")
+    if previous and previous != normalized:
+        _reset_database_job_selection()
+    st.session_state[SELECTED_SESSION_STATE_KEY] = normalized
+    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = normalized
+    st.session_state[APPLIED_QUERY_SESSION_STATE_KEY] = normalized
+    if normalized:
+        st.query_params[SESSION_QUERY_PARAM_KEY] = normalized
+    else:
+        st.query_params.pop(SESSION_QUERY_PARAM_KEY, None)
 
 
 def sync_selected_session_from_widget() -> None:
@@ -68,7 +84,7 @@ def sync_selected_session_from_widget() -> None:
         persist_selected_session(str(selected))
 
 
-def resolve_selected_session_id(sessions: list[dict]) -> str:
+def resolve_selected_session_id(sessions: list[dict], *, use_query_param: bool = True) -> str:
     """Resolve active session ID safely for each browser session.
 
     A just-clicked selectbox value is protected so it cannot be overwritten by
@@ -76,7 +92,7 @@ def resolve_selected_session_id(sessions: list[dict]) -> str:
     on initial load and when the browser URL changes externally.
     """
     session_ids = [item["session_id"] for item in sessions]
-    url_session = current_query_session_id()
+    url_session = current_query_session_id() if use_query_param else ""
 
     # 1. Trust a widget change that was just delivered by the selectbox callback.
     pending_widget_session = st.session_state.get(PENDING_WIDGET_SESSION_STATE_KEY, "")
@@ -179,6 +195,7 @@ def open_worker_log_dialog() -> None:
 
 
 def get_selected_session() -> dict | None:
+    """Return the browser-local session selected by the shared sidebar widget."""
     sessions = list_sessions()
     if not sessions:
         return None
@@ -187,8 +204,19 @@ def get_selected_session() -> dict | None:
     return touch_session(str(selected))
 
 
-def render_session_sidebar() -> dict | None:
-    sessions = list_sessions()
+def render_session_sidebar(
+    *,
+    database_mode: bool = False,
+    sessions: list[dict] | None = None,
+) -> dict | None:
+    """Render the one session selector shared by every MolScout page.
+
+    This function is intended to be called from the application entrypoint
+    before ``page.run()``. Keeping one widget alive across ``st.navigation``
+    page changes makes its state browser-local and stable across pages.
+    """
+    if sessions is None:
+        sessions = list_sessions()
 
     with st.container(border=True):
         st.markdown("## :material/group_work: Session")
@@ -198,14 +226,21 @@ def render_session_sidebar() -> dict | None:
                 open_create_session_dialog()
             return None
 
-        session_ids = [item["session_id"] for item in sessions]
-        selected = resolve_selected_session_id(sessions)
+        session_ids = [str(item["session_id"]) for item in sessions]
+        selected = resolve_selected_session_id(
+            sessions,
+            use_query_param=not database_mode,
+        )
         widget_selection = st.session_state.get(SESSION_SELECTOR_WIDGET_KEY)
         if widget_selection not in session_ids or widget_selection != selected:
+            # This assignment occurs before the widget is created.
             st.session_state[SESSION_SELECTOR_WIDGET_KEY] = selected
 
         labels = {
-            item["session_id"]: f"{item['session_id']} | {item.get('owner_label', 'anonymous')} | jobs {len(list_jobs(item['session_id']))}"
+            str(item["session_id"]): (
+                f"{item['session_id']} | {item.get('owner_label', 'anonymous')} | "
+                f"jobs {len(item.get('job_order', []))}"
+            )
             for item in sessions
         }
         selected_id = st.selectbox(
@@ -215,6 +250,11 @@ def render_session_sidebar() -> dict | None:
             format_func=lambda session_id: labels[session_id],
             on_change=sync_selected_session_from_widget,
         )
+
+        # The shared widget is the canonical browser-local choice. Database
+        # pages keep a compatibility mirror for their existing job helpers.
+        st.session_state[SELECTED_SESSION_STATE_KEY] = selected_id
+        st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected_id
 
         if st.button(t(':material/add: Add new session'), type="primary", width="stretch"):
             open_create_session_dialog()
@@ -253,17 +293,24 @@ def _apply_database_query_target(sessions: list[dict]) -> None:
     session_id = _query_param_text(DB_SESSION_QUERY_PARAM_KEY)
     job_id = _query_param_text(DB_JOB_QUERY_PARAM_KEY)
     token = f"{session_id}|{job_id}"
-    if token == str(st.session_state.get(DB_QUERY_TARGET_APPLIED_STATE_KEY) or ""):
-        return
+    applied_token = str(st.session_state.get(DB_QUERY_TARGET_APPLIED_STATE_KEY) or "")
+    if token == applied_token:
+        current_session = str(st.session_state.get(SELECTED_SESSION_STATE_KEY) or "")
+        current_job = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
+        session_matches = not session_id or current_session == session_id
+        job_matches = not job_id or current_job == job_id
+        if session_matches and job_matches:
+            return
 
     session_ids = {str(item.get("session_id") or "") for item in sessions}
     if session_id in session_ids:
         jobs = list_jobs(session_id)
         job_ids = {str(item.get("job_id") or "") for item in jobs}
         # A database deep link is an explicit browser-local session choice.
-        st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
-        st.session_state[DB_SELECTED_SESSION_STATE_KEY] = session_id
-        st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = session_id
+        persist_selected_session(session_id)
+        # Safe because database targets are prepared before the shared widget
+        # is rendered by the application entrypoint.
+        st.session_state[SESSION_SELECTOR_WIDGET_KEY] = session_id
         if job_id in job_ids:
             st.session_state[DB_SELECTED_JOB_STATE_KEY] = job_id
             st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = job_id
@@ -332,19 +379,6 @@ def _resolve_database_session_id(sessions: list[dict]) -> str:
     return fallback
 
 
-def _sync_database_session_from_widget() -> None:
-    selected = str(st.session_state.get(DB_SESSION_SELECTOR_WIDGET_KEY) or "")
-    if not selected:
-        return
-    st.session_state[SELECTED_SESSION_STATE_KEY] = selected
-    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected
-    st.session_state[DB_SELECTED_JOB_STATE_KEY] = ""
-    st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
-    st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
-    st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = []
-    st.session_state.pop(DB_JOB_TABLE_SYNC_STATE_KEY, None)
-    _persist_database_query_target(selected)
-
 
 def _resolve_database_job_id(jobs: list[dict]) -> str:
     job_ids = [str(item["job_id"]) for item in jobs]
@@ -392,11 +426,10 @@ def database_job_selection() -> tuple[str, list[str]]:
 
 
 def set_database_selection(session_id: str, job_id: str = "") -> None:
-    """Set the database browsing target and browser-wide session choice."""
+    """Set database browsing state for the next rerun/page render."""
     normalized_session_id = str(session_id or "")
     normalized_job_id = str(job_id or "")
-    st.session_state[SELECTED_SESSION_STATE_KEY] = normalized_session_id
-    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = normalized_session_id
+    persist_selected_session(normalized_session_id)
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = normalized_job_id
     st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
     st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
@@ -435,9 +468,9 @@ def _apply_pending_database_multi_selection(sessions: list[dict]) -> None:
         return
 
     active_job_id = selected_job_ids[0]
-    st.session_state[SELECTED_SESSION_STATE_KEY] = session_id
-    st.session_state[DB_SELECTED_SESSION_STATE_KEY] = session_id
-    st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = session_id
+    persist_selected_session(session_id)
+    # Safe because pending database state is applied before the shared widget.
+    st.session_state[SESSION_SELECTOR_WIDGET_KEY] = session_id
     st.session_state[DB_SELECTED_JOB_STATE_KEY] = active_job_id
     st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = active_job_id
     st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = True
@@ -449,6 +482,14 @@ def _apply_pending_database_multi_selection(sessions: list[dict]) -> None:
     }
     _persist_database_query_target(session_id, active_job_id)
 
+
+
+def prepare_database_sidebar_state() -> list[dict]:
+    """Apply database deep-link/pending state before the shared widget exists."""
+    sessions = list_sessions()
+    _apply_database_query_target(sessions)
+    _apply_pending_database_multi_selection(sessions)
+    return sessions
 
 def _archive_signature(jobs: list[dict], job_ids: tuple[str, ...]) -> tuple[tuple[str, str, str], ...]:
     selected = set(job_ids)
@@ -630,11 +671,10 @@ def _render_selected_jobs_archive(
         )
 
 
-def render_database_sidebar() -> dict | None:
-    """Render database browsing context using the browser-wide session choice."""
-    sessions = list_sessions()
-    _apply_database_query_target(sessions)
-    _apply_pending_database_multi_selection(sessions)
+def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
+    """Render database job controls for the shared browser-local session."""
+    if sessions is None:
+        sessions = list_sessions()
 
     with st.sidebar:
         with st.container(border=True):
@@ -651,28 +691,11 @@ def render_database_sidebar() -> dict | None:
                     )
                 return None
 
-            session_ids = [str(item["session_id"]) for item in sessions]
             selected_session_id = _resolve_database_session_id(sessions)
-            if st.session_state.get(DB_SESSION_SELECTOR_WIDGET_KEY) != selected_session_id:
-                st.session_state[DB_SESSION_SELECTOR_WIDGET_KEY] = selected_session_id
-
-            session_labels = {
-                str(item["session_id"]): (
-                    f"{item['session_id']} | {item.get('owner_label', 'anonymous')} | "
-                    f"jobs {len(item.get('job_order', []))}"
-                )
-                for item in sessions
-            }
-            selected_session_id = st.selectbox(
-                "Session",
-                session_ids,
-                key=DB_SESSION_SELECTOR_WIDGET_KEY,
-                format_func=lambda session_id: session_labels[session_id],
-                on_change=_sync_database_session_from_widget,
-            )
-            # Keep session choice browser-local but common across all pages.
-            st.session_state[SELECTED_SESSION_STATE_KEY] = selected_session_id
-            st.session_state[DB_SELECTED_SESSION_STATE_KEY] = selected_session_id
+            if not selected_session_id:
+                st.info(t('Select a session above.'))
+                return None
+            st.caption(f"Jobs for `{selected_session_id}`")
 
             jobs = list_jobs(selected_session_id)
             selected_job = None
@@ -833,16 +856,14 @@ def render_admin_sidebar() -> None:
     )
 
 
-def render_queue_sidebar() -> dict | None:
-    """Render the existing queue/session sidebar unchanged in behavior."""
+def render_queue_sidebar() -> None:
+    """Render queue monitoring/admin controls below the shared session widget."""
     with st.sidebar:
-        session = render_session_sidebar()
         sidebar_monitor_fragment()
         st.divider()
         render_admin_sidebar()
-    return session
 
 
-def render_sidebar() -> dict | None:
-    """Backward-compatible alias for the queue-style sidebar."""
-    return render_queue_sidebar()
+def render_sidebar() -> None:
+    """Backward-compatible alias for queue monitoring/admin controls."""
+    render_queue_sidebar()
