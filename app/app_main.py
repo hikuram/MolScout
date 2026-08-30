@@ -13,7 +13,12 @@ def run_app(language: str = "en") -> None:
 
     from app_core.database import ensure_database
     from app_core.paths import ensure_app_dirs
-    from app_ui.sidebar import render_database_sidebar, render_queue_sidebar
+    from app_ui.sidebar import (
+        prepare_database_sidebar_state,
+        render_database_sidebar,
+        render_queue_sidebar,
+        render_session_sidebar,
+    )
     from app_ui.views import ensure_worker_running, inject_css
 
     ensure_app_dirs()
@@ -36,8 +41,24 @@ def run_app(language: str = "en") -> None:
     )
 
     database_pages = {"Results", "Chemiscope", "Data"}
-    if page.title in database_pages:
-        render_database_sidebar()
+    database_mode = page.title in database_pages
+
+    # Database deep links and pending job selections may change the active
+    # session. Apply them before creating the shared session widget so Streamlit
+    # never needs to rewrite a widget key after the widget has been rendered.
+    database_sessions = prepare_database_sidebar_state() if database_mode else None
+
+    # One persistent session selector is rendered from the entrypoint for every
+    # page. Streamlit therefore keeps the widget alive across st.navigation page
+    # changes and the choice remains local to this browser tab/session.
+    with st.sidebar:
+        render_session_sidebar(
+            database_mode=database_mode,
+            sessions=database_sessions,
+        )
+
+    if database_mode:
+        render_database_sidebar(database_sessions)
     else:
         render_queue_sidebar()
 
