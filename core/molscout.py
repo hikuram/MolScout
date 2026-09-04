@@ -463,7 +463,7 @@ def generate_path_neb(reactant_atoms: Atoms, product_atoms: Atoms) -> None:
         images.append(reactant_atoms.copy())
     images.append(product_atoms)
     
-    neb = NEB(images, k=g.NEB_SPRING_CONSTANT, climb=g.NEB_CLIMB)
+    neb = NEB(images, k=g.NEB_SPRING_CONSTANT, climb=g.NEB_CLIMB, method="improvedtangent")
     try:
         neb.interpolate('idpp')
     except Exception as e:
@@ -477,12 +477,12 @@ def generate_path_neb(reactant_atoms: Atoms, product_atoms: Atoms) -> None:
         log("Path", f"Applied FixAtoms constraint to NEB intermediate images: {g.FIXED_ATOMS}")
     # -------------------------------------
     
-    for i, img in enumerate(images[1:-1]):
+    for i, img in enumerate(images):
         img.info["charge"] = g.CHARGE
         img.info["spin"] = g.MULT
-        if constraints:
+        if constraints and 0 < i < len(images) - 1:
             img.set_constraint(constraints)
-        img.calc = make_calculator(g.CALC_TYPE, img, f"NEB_img_{i+1}")
+        img.calc = make_calculator(g.CALC_TYPE, img, f"NEB_img_{i}")
         
     opt = LBFGS(neb, trajectory='NEB_history.traj', logfile='NEB_opt.log')
     opt.run(fmax=g.OPT_FMAX, steps=1000)
