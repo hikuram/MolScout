@@ -271,13 +271,15 @@ try:
     )
     with st.expander("Chemiscope settings", expanded=False):
         st.json(settings)
-    chemiscope.streamlit.viewer(
-        dataset,
-        mode=str(mode or "default"),
-        key=viewer_key(str(selected_path), len(structures)),
-        width="stretch",
-        height=720,
-    )
+    @st.fragment
+    def render_chemiscope():
+        chemiscope.streamlit.viewer(
+            dataset, 
+            mode=str(mode or "default"),
+            key=viewer_key(str(selected_path), len(structures)),
+            width="stretch", height=720,
+        )
+    render_chemiscope()
 except ImportError as error:
     render_dependency_hint(error)
 except Exception as error:
