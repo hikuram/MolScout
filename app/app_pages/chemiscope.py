@@ -271,14 +271,36 @@ try:
     )
     with st.expander("Chemiscope settings", expanded=False):
         st.json(settings)
+
+    viewer_mode = str(mode or "default")
+    component_key = viewer_key(
+        str(selected_path),
+        len(structures),
+        viewer_mode,
+        int(selected_row["mtime_ns"]),
+    )
+    settings_sync_key = f"{component_key}_molscout_settings"
+    settings_pending_key = f"{settings_sync_key}_pending"
+    molscout_settings_state = (bool(join_points), int(playback_delay))
+    if st.session_state.get(settings_sync_key) != molscout_settings_state:
+        st.session_state[settings_sync_key] = molscout_settings_state
+        st.session_state[settings_pending_key] = True
+
     @st.fragment
     def render_chemiscope():
+        # Re-apply MolScout-controlled settings only when they change. Passing
+        # them on every fragment rerun would overwrite Chemiscope-side state.
+        viewer_settings = settings if st.session_state.get(settings_pending_key, False) else None
         chemiscope.streamlit.viewer(
-            dataset, 
-            mode=str(mode or "default"),
-            key=viewer_key(str(selected_path), len(structures)),
-            width="stretch", height=720,
+            dataset,
+            settings=viewer_settings,
+            mode=viewer_mode,
+            key=component_key,
+            width="stretch",
+            height=720,
         )
+        st.session_state[settings_pending_key] = False
+
     render_chemiscope()
 except ImportError as error:
     render_dependency_hint(error)
