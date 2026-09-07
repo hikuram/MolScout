@@ -277,6 +277,8 @@ def build_chemiscope_dataset(
     return dataset, settings
 
 
-def viewer_key(path_text: str, n_frames: int) -> str:
-    digest = hashlib.sha1(f"{path_text}:{n_frames}".encode("utf-8")).hexdigest()
+def viewer_key(path_text: str, n_frames: int, mode: str, mtime_ns: int) -> str:
+    digest = hashlib.sha1(
+        f"{path_text}:{n_frames}:{mode}:{mtime_ns}".encode("utf-8")
+    ).hexdigest()
     return f"chemiscope_viewer_{digest[:12]}"
