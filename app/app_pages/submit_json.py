@@ -24,6 +24,7 @@ from app_core.json_submission import (
     workflow_steps,
 )
 from app_core.queue_manager import enqueue_job
+from app_core.system_monitor import storage_admission_status
 from app_core.session_manager import (
     create_job,
     default_pyscf_config,
@@ -578,6 +579,14 @@ if errors:
     st.stop()
 for message in validation_warnings:
     st.warning(message, icon=":material/warning:")
+
+storage_status = storage_admission_status()
+if not storage_status["allowed"]:
+    st.error(
+        "New job submission is blocked by storage protection: "
+        f"{storage_status['reason']}"
+    )
+    st.stop()
 
 job = create_job(session_id=session_id, owner_label=owner_label, workflow="JSON submission")
 job_root = job_dir(session_id, job["job_id"])

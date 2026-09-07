@@ -71,7 +71,7 @@ from app_core.session_manager import (
     session_dir,
     touch_session,
 )
-from app_core.system_monitor import system_snapshot
+from app_core.system_monitor import storage_admission_status, system_snapshot
 from app_core.utils import file_size_label, now_iso, safe_name, tail_text
 from input_validation import (
     ALPB_TO_SMD_SOLVENT,
@@ -2231,7 +2231,12 @@ def render_queue_status_card(queue_state_label: str, queued_count: int, running_
         extra_bits.append(f"{running_count} running")
     if stopping_count:
         extra_bits.append(f"{stopping_count} stopping")
-    extra_text = " | ".join(extra_bits) if extra_bits else "No active worker task"
+    if extra_bits:
+        extra_text = " | ".join(extra_bits)
+    elif queue_state_label == "Held":
+        extra_text = "Dispatch paused by storage protection"
+    else:
+        extra_text = "No active worker task"
     st.markdown(
         f"""
 <div class="status-card">
@@ -2251,6 +2256,7 @@ def sidebar_monitor_fragment() -> None:
     queued_count = sum(item["status"] == "queued" for item in queue["jobs"])
     running_count = sum(item["status"] == "running" for item in queue["jobs"])
     stopping_count = sum(item["status"] == "cancel_requested" for item in queue["jobs"])
+    dispatch_hold = queue.get("dispatch_hold")
 
     st.markdown("## :material/monitoring: Monitor")
     st.caption("Live server and queue status")
@@ -2261,7 +2267,11 @@ def sidebar_monitor_fragment() -> None:
     queue_state = "Running" if running_count else "Idle"
     if stopping_count:
         queue_state = "Stopping"
+    elif dispatch_hold and queued_count:
+        queue_state = "Held"
     render_queue_status_card(queue_state, queued_count, running_count, stopping_count)
+    if dispatch_hold and queued_count:
+        st.warning(f"Queue dispatch paused by storage protection: {dispatch_hold.get('reason', 'storage limit reached')}")
     
     # --- CPU Util & GPU Util ---
     load_cols = st.columns(2)
@@ -2314,6 +2324,39 @@ def sidebar_monitor_fragment() -> None:
         chart_max=100,
     )
     
+    # --- Disk ---
+    storage_admission = snapshot.get("storage_admission", {})
+    disk_used = disk.get("used_gb")
+    disk_total = disk.get("total_gb")
+    disk_free = disk.get("free_gb")
+    disk_pct = disk.get("used_pct")
+    disk_history = append_monitor_history(
+        "disk_used_pct",
+        disk_pct if isinstance(disk_pct, (int, float)) else None,
+    )
+    if isinstance(disk_used, (int, float)) and isinstance(disk_total, (int, float)):
+        disk_main = f"{disk_used:.1f}/{disk_total:.1f} GB"
+    else:
+        disk_main = "-"
+    if isinstance(disk_pct, (int, float)) and isinstance(disk_free, (int, float)):
+        disk_sub = f"{disk_pct:.0f}% used | {disk_free:.1f} GB free"
+    else:
+        disk_sub = "Storage usage unavailable"
+    render_resource_card(
+        "Disk",
+        disk_main,
+        disk_sub,
+        disk_history,
+        color="#DC2626",
+        chart_min=0,
+        chart_max=100,
+    )
+    if not storage_admission.get("allowed", True):
+        st.warning(
+            "Storage protection is active. New submissions and queued-job dispatch are blocked: "
+            f"{storage_admission.get('reason', 'storage status unavailable')}"
+        )
+
     # --- GPU Memory ---
     if gpu_rows:
         gpu = gpu_rows[0]
@@ -2512,6 +2555,8 @@ def render_job_detail(
         stop_result = stop_job(job)
         if stop_result == "signaled":
             st.warning(t('Stop signal sent. The queue will advance after stop confirmation.'))
+        elif stop_result == "error":
+            st.error(job.get("status_message") or "Failed to signal the job process group.")
         else:
             st.info(t('This job is not running. Refreshing the view.'))
         st.rerun()
@@ -3423,6 +3468,14 @@ def render_job_submission(session: dict) -> None:
     for message in scan_resolution_notes:
         st.info(message, icon=":material/info:")
 
+    storage_status = storage_admission_status()
+    if not storage_status["allowed"]:
+        st.error(
+            "New job submission is blocked by storage protection: "
+            f"{storage_status['reason']}"
+        )
+        return
+
     job = create_job(session_id=session_id, owner_label=owner_label, workflow=preset)
     job["charge"] = int(charge)
     job["method"] = effective_method
@@ -3840,6 +3893,14 @@ def render_concat_submission(session: dict) -> None:
         return
     for message in validation_warnings:
         st.warning(message, icon=":material/warning:")
+
+    storage_status = storage_admission_status()
+    if not storage_status["allowed"]:
+        st.error(
+            "New job submission is blocked by storage protection: "
+            f"{storage_status['reason']}"
+        )
+        return
 
     job = create_job(session_id=session_id, owner_label=owner_label, workflow="Concatenation & Batch")
     job["charge"] = int(charge)
