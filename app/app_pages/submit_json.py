@@ -41,6 +41,15 @@ from app_ui.views import (
     submit_reset_pending_key,
     write_uploaded_file,
 )
+from input_validation import (
+    read_structure_bytes_strict,
+    read_structure_file_strict,
+    split_issues,
+    validate_charge_spin,
+    validate_endpoint_pair,
+    validate_mixed_level_solvation,
+    validate_scan_constraints,
+)
 
 
 def source_config_path(session_id: str, job: dict[str, Any]) -> Path | None:
@@ -421,10 +430,154 @@ else:
     pyscf_payload = dict(session.get("pyscf_config", default_pyscf_config()))
     pyscf_manifest = {}
 
+validation_warnings: list[str] = []
+_, solvent_warnings = split_issues(validate_mixed_level_solvation(config, pyscf_payload))
+validation_warnings.extend(solvent_warnings)
+
+representative_atoms = None
+if not errors:
+    try:
+        if mode == "reactant_product":
+            if source_mode == "Existing job":
+                reactant_atoms = read_structure_file_strict(source_inputs[0]["path"], label="Reactant XYZ")
+                product_atoms = (
+                    read_structure_file_strict(source_inputs[1]["path"], label="Product XYZ")
+                    if len(source_inputs) > 1
+                    else None
+                )
+            else:
+                reactant_atoms = read_structure_bytes_strict(
+                    reactant_file.getvalue(), suffix=".xyz", label="Reactant XYZ"
+                )
+                product_atoms = (
+                    read_structure_bytes_strict(
+                        product_file.getvalue(), suffix=".xyz", label="Product XYZ"
+                    )
+                    if product_file is not None
+                    else None
+                )
+            representative_atoms = reactant_atoms
+            if product_atoms is not None:
+                pair_errors, pair_warnings = split_issues(validate_endpoint_pair(reactant_atoms, product_atoms))
+                errors.extend(pair_errors)
+                validation_warnings.extend(pair_warnings)
+            charge_errors, charge_warnings = split_issues(
+                validate_charge_spin(
+                    reactant_atoms,
+                    int(config.get("CHARGE", 0)),
+                    int(config.get("MULT", 1)),
+                    label="Reactant",
+                )
+            )
+            errors.extend(charge_errors)
+            validation_warnings.extend(charge_warnings)
+            scan_indices = config.get("SCAN_INDICES", [])
+            fixed_atoms = config.get("FIXED_ATOMS", [])
+            if not isinstance(fixed_atoms, (list, tuple)):
+                errors.append("FIXED_ATOMS must be a list of integer atom indices.")
+            else:
+                if str(config.get("INIT_PATH_METHOD", "DMF")).upper() == "SCAN":
+                    if not isinstance(scan_indices, (list, tuple)):
+                        errors.append("SCAN_INDICES must be a list of integer atom indices.")
+                        scan_indices = []
+                else:
+                    scan_indices = []
+                if isinstance(scan_indices, (list, tuple)):
+                    scan_errors, scan_warnings = split_issues(
+                        validate_scan_constraints(scan_indices, fixed_atoms, len(reactant_atoms))
+                    )
+                    errors.extend(scan_errors)
+                    validation_warnings.extend(scan_warnings)
+        elif mode == "single_input":
+            if source_mode == "Existing job":
+                representative_atoms = read_structure_file_strict(source_inputs[0]["path"], label="Input structure")
+            else:
+                suffix = Path(input_file.name).suffix or ".xyz"
+                representative_atoms = read_structure_bytes_strict(
+                    input_file.getvalue(), suffix=suffix, label="Input structure"
+                )
+            charge_errors, charge_warnings = split_issues(
+                validate_charge_spin(
+                    representative_atoms,
+                    int(config.get("CHARGE", 0)),
+                    int(config.get("MULT", 1)),
+                    label="Input structure",
+                )
+            )
+            errors.extend(charge_errors)
+            validation_warnings.extend(charge_warnings)
+            fixed_atoms = config.get("FIXED_ATOMS", [])
+            if not isinstance(fixed_atoms, (list, tuple)):
+                errors.append("FIXED_ATOMS must be a list of integer atom indices.")
+            else:
+                fixed_errors, fixed_warnings = split_issues(
+                    validate_scan_constraints([], fixed_atoms, len(representative_atoms))
+                )
+                errors.extend(fixed_errors)
+                validation_warnings.extend(fixed_warnings)
+        elif mode == "cat":
+            cat_sources = []
+            if source_mode == "Existing job":
+                for item in source_inputs:
+                    cat_sources.append((
+                        str(item.get("original_name") or Path(item["path"]).name),
+                        read_structure_file_strict(item["path"], label=f"CAT input '{item.get('original_name') or Path(item['path']).name}'"),
+                    ))
+            else:
+                for uploaded in cat_files or []:
+                    suffix = Path(uploaded.name).suffix or ".xyz"
+                    cat_sources.append((
+                        uploaded.name,
+                        read_structure_bytes_strict(
+                            uploaded.getvalue(), suffix=suffix, label=f"CAT input '{uploaded.name}'"
+                        ),
+                    ))
+
+            for name, atoms in cat_sources:
+                if representative_atoms is None:
+                    representative_atoms = atoms
+                else:
+                    pair_errors, pair_warnings = split_issues(
+                        validate_endpoint_pair(
+                            representative_atoms,
+                            atoms,
+                            left_label="First CAT input",
+                            right_label=f"CAT input '{name}'",
+                        )
+                    )
+                    errors.extend(pair_errors)
+                    validation_warnings.extend(pair_warnings)
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(
+                        atoms,
+                        int(config.get("CHARGE", 0)),
+                        int(config.get("MULT", 1)),
+                        label=f"CAT input '{name}'",
+                    )
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+
+            if representative_atoms is not None:
+                fixed_atoms = config.get("FIXED_ATOMS", [])
+                if not isinstance(fixed_atoms, (list, tuple)):
+                    errors.append("FIXED_ATOMS must be a list of integer atom indices.")
+                else:
+                    fixed_errors, fixed_warnings = split_issues(
+                        validate_scan_constraints([], fixed_atoms, len(representative_atoms))
+                    )
+                    errors.extend(fixed_errors)
+                    validation_warnings.extend(fixed_warnings)
+
+    except Exception as exc:
+        errors.append(f"Input validation failed: {exc}")
+
 if errors:
     for message in errors:
         st.error(message)
     st.stop()
+for message in validation_warnings:
+    st.warning(message, icon=":material/warning:")
 
 job = create_job(session_id=session_id, owner_label=owner_label, workflow="JSON submission")
 job_root = job_dir(session_id, job["job_id"])

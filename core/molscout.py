@@ -31,11 +31,158 @@ from sella_ext_AdaptiveIRC import AdaptiveIRC
 from pyscf_exporter import export_pyscf_single_point
 
 # --- Separated Modules ---
-from ase_calculators import make_calculator, get_pyscf_profile, get_solvation_info
+from ase_calculators import make_calculator, get_pyscf_profile, get_solvation_info, load_pyscf_config
 from traj_utils import extract_peaks_from_traj, traj_to_xyz, write_energies, \
     split_traj_to_xyz, generate_path_concat
 from utils import log, read
 from config_manager import apply_config, apply_config_file, config_to_dict, save_config
+from input_validation import (
+    error as validation_error,
+    read_structure_file_strict,
+    split_issues,
+    validate_charge_spin,
+    validate_endpoint_pair,
+    validate_mixed_level_solvation,
+    validate_scan_constraints,
+)
+
+
+def _workflow_uses_pyscf(config: dict[str, object]) -> bool:
+    primary = str(config.get("CALC_TYPE", "")).lower()
+    refine = str(config.get("REFINE_CALC_TYPE", "")).lower()
+    return (
+        primary in {"pyscf", "pyscf_high"}
+        or (
+            bool(config.get("REFINE_ENERGY_ON", False))
+            and refine in {"pyscf", "pyscf_high"}
+        )
+        or bool(config.get("SCAN_MF_ON", False))
+    )
+
+
+def validate_runtime_inputs() -> None:
+    """Run low-cost input guards before any calculator is constructed."""
+    config = config_to_dict(g)
+    issues = []
+    representative_atoms = None
+    init_path_on = bool(config.get("INIT_PATH_SEARCH_ON", True))
+    init_method = str(config.get("INIT_PATH_METHOD", "DMF")).upper()
+
+    try:
+        if init_path_on and init_method == "CAT":
+            concat_files = list(config.get("CONCAT_FILES", []) or [])
+            reference_atoms = None
+            for file_name in concat_files:
+                atoms = read_structure_file_strict(file_name, label=f"CAT input '{file_name}'")
+                issues.extend(
+                    validate_charge_spin(
+                        atoms,
+                        int(config.get("CHARGE", 0)),
+                        int(config.get("MULT", 1)),
+                        label=f"CAT input '{file_name}'",
+                    )
+                )
+                if reference_atoms is None:
+                    reference_atoms = atoms
+                    representative_atoms = atoms
+                else:
+                    issues.extend(
+                        validate_endpoint_pair(
+                            reference_atoms,
+                            atoms,
+                            left_label="First CAT input",
+                            right_label=f"CAT input '{file_name}'",
+                        )
+                    )
+            if representative_atoms is not None:
+                issues.extend(
+                    validate_scan_constraints(
+                        [],
+                        config.get("FIXED_ATOMS", []) or [],
+                        len(representative_atoms),
+                    )
+                )
+
+        elif init_path_on:
+            reactant_atoms = read_structure_file_strict("reactant.xyz", label="Reactant XYZ")
+            representative_atoms = reactant_atoms
+            issues.extend(
+                validate_charge_spin(
+                    reactant_atoms,
+                    int(config.get("CHARGE", 0)),
+                    int(config.get("MULT", 1)),
+                    label="Reactant",
+                )
+            )
+
+            issues.extend(
+                validate_scan_constraints(
+                    (config.get("SCAN_INDICES", []) or []) if init_method == "SCAN" else [],
+                    config.get("FIXED_ATOMS", []) or [],
+                    len(reactant_atoms),
+                )
+            )
+
+            if init_method in {"DMF", "NEB"}:
+                if not os.path.exists("product.xyz"):
+                    issues.append(
+                        validation_error(
+                            "missing_product",
+                            f"{init_method} path search requires product.xyz.",
+                        )
+                    )
+                else:
+                    product_atoms = read_structure_file_strict("product.xyz", label="Product XYZ")
+                    issues.extend(validate_endpoint_pair(reactant_atoms, product_atoms))
+        else:
+            input_name = str(config.get("I_TRAJ", ""))
+            atoms = read_structure_file_strict(input_name, label="Input structure")
+            representative_atoms = atoms
+            issues.extend(
+                validate_charge_spin(
+                    atoms,
+                    int(config.get("CHARGE", 0)),
+                    int(config.get("MULT", 1)),
+                    label="Input structure",
+                )
+            )
+            issues.extend(
+                validate_scan_constraints(
+                    [],
+                    config.get("FIXED_ATOMS", []) or [],
+                    len(atoms),
+                )
+            )
+    except Exception as exc:
+        log("Fail", f"Input validation failed while reading structures: {exc}")
+        sys.exit("abort: input validation failed")
+
+    errors, warnings = split_issues(issues)
+    for message in warnings:
+        log("Warn", f"Input validation: {message}")
+    if errors:
+        for message in errors:
+            log("Fail", f"Input validation: {message}")
+        sys.exit("abort: input validation failed")
+
+    issues = []
+    if _workflow_uses_pyscf(config):
+        try:
+            pyscf_config = load_pyscf_config()
+        except Exception as exc:
+            log("Fail", f"Could not load PySCF configuration for validation: {exc}")
+            sys.exit("abort: PySCF configuration validation failed")
+
+        issues.extend(validate_mixed_level_solvation(config, pyscf_config))
+
+    errors, warnings = split_issues(issues)
+    for message in warnings:
+        log("Warn", f"Input validation: {message}")
+    if errors:
+        for message in errors:
+            log("Fail", f"Input validation: {message}")
+        sys.exit("abort: input validation failed")
+    log("System", "Input validation passed.")
 
 
 def build_thermo_csv_output(time_vib, vib_values, energy_ll_kcal, thermal_corr_g_kcal):
@@ -1763,6 +1910,8 @@ if __name__ == '__main__':
     )
     if not refine_input_applicable:
         g.REFINE_INPUT_ON = False
+
+    validate_runtime_inputs()
 
     save_config(config_to_dict(g), "resolved_config.json")
     log("System", "--- Global Configuration Dump ---")

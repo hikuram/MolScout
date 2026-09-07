@@ -73,6 +73,17 @@ from app_core.session_manager import (
 )
 from app_core.system_monitor import system_snapshot
 from app_core.utils import file_size_label, now_iso, safe_name, tail_text
+from input_validation import (
+    ALPB_TO_SMD_SOLVENT,
+    read_structure_bytes_strict,
+    read_structure_file_strict,
+    split_issues,
+    validate_charge_spin,
+    validate_endpoint_pair,
+    validate_mixed_level_solvation,
+    validate_pyscf_config_for_save,
+    validate_scan_constraints,
+)
 
 REFRESHABLE_JOB_STATUSES = {"running", "cancel_requested", "queued"}
 APP_TZ = ZoneInfo("Asia/Tokyo")
@@ -1679,21 +1690,7 @@ def render_method_live_controls(
     orbmol_key = f"{prefix}_orbmol_version"
     alpb_key = f"{prefix}_alpb_solvent"
     ui_method_options = [m for m in METHOD_OPTIONS if m != "orbmol+alpb"]
-    alpb_options = [
-        "None",
-        "water",
-        "acetonitrile",
-        "methanol",
-        "ethanol",
-        "ch2cl2",
-        "thf",
-        "toluene",
-        "dmf",
-        "dmso",
-        "acetone",
-        "dioxane",
-        "ether",
-    ]
+    alpb_options = ["None", *ALPB_TO_SMD_SOLVENT]
     alpb_labels = {
         "ch2cl2": "ch2cl2 (dichloromethane)",
     }
@@ -2866,11 +2863,18 @@ def render_session_config(session: dict) -> None:
         reload_pressed = actions[2].button(t(':material/refresh: Reload session values'), width="stretch")
 
     if save_pressed:
-        updated = dict(session)
-        updated["pyscf_config"] = config
-        save_session(updated)
-        st.success(t('Session PySCF settings saved.'))
-        st.rerun()
+        validation_errors, validation_warnings = split_issues(validate_pyscf_config_for_save(config))
+        if validation_errors:
+            for message in validation_errors:
+                st.error(message)
+        else:
+            for message in validation_warnings:
+                st.warning(message, icon=":material/warning:")
+            updated = dict(session)
+            updated["pyscf_config"] = config
+            save_session(updated)
+            st.success(t('Session PySCF settings saved.'))
+            st.rerun()
     if reset_pressed:
         updated = dict(session)
         updated["pyscf_config"] = default_pyscf_config()
@@ -3330,10 +3334,92 @@ def render_job_submission(session: dict) -> None:
             if existing_result is None:
                 errors.append(t('Select an existing `.csv` file from this session.'))
 
+    validation_warnings: list[str] = []
+    validation_config = {
+        "CALC_TYPE": effective_method,
+        "REFINE_ENERGY_ON": bool(do_refine),
+        "REFINE_CALC_TYPE": str(module_settings["refine_calc_type"]),
+        "SCAN_MF_ON": bool(mf_scan_active),
+        "SCAN_MF_MLIP_CALC_TYPE": (
+            "orbmol+alpb" if mf_scan_active and alpb_solvent != "None" else "orbmol"
+        ),
+        "ALPB_SOLVENT": str(alpb_solvent),
+    }
+    pyscf_validation_config = session.get("pyscf_config", default_pyscf_config())
+    _, solvent_warnings = split_issues(
+        validate_mixed_level_solvation(validation_config, pyscf_validation_config)
+    )
+    validation_warnings.extend(solvent_warnings)
+
+    representative_atoms = None
+    if not errors and preset != "Figure refresh only":
+        try:
+            if mode == "reactant_product":
+                if source_mode == t('Upload new files'):
+                    reactant_atoms = read_structure_bytes_strict(
+                        reactant_file.getvalue(), suffix=".xyz", label="Reactant XYZ"
+                    )
+                    product_atoms = (
+                        read_structure_bytes_strict(
+                            product_file.getvalue(), suffix=".xyz", label="Product XYZ"
+                        )
+                        if product_file is not None
+                        else None
+                    )
+                else:
+                    reactant_source, product_source = sample_case_files(sample_case or "")
+                    reactant_atoms = read_structure_file_strict(reactant_source, label="Reactant XYZ")
+                    product_atoms = (
+                        read_structure_file_strict(product_source, label="Product XYZ")
+                        if product_source is not None
+                        else None
+                    )
+                representative_atoms = reactant_atoms
+                pair_issues = validate_endpoint_pair(reactant_atoms, product_atoms) if product_atoms is not None else []
+                pair_errors, pair_warnings = split_issues(pair_issues)
+                errors.extend(pair_errors)
+                validation_warnings.extend(pair_warnings)
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(reactant_atoms, int(charge), int(mult), label="Reactant")
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+                constraint_scan_indices = (
+                    scan_indices if module_settings["init_path_method"] == "SCAN" else []
+                )
+                scan_errors, scan_warnings = split_issues(
+                    validate_scan_constraints(constraint_scan_indices, fixed_atoms, len(reactant_atoms))
+                )
+                errors.extend(scan_errors)
+                validation_warnings.extend(scan_warnings)
+            elif mode == "single_input":
+                if source_mode == t('Upload new files'):
+                    suffix = Path(input_file.name).suffix or ".xyz"
+                    representative_atoms = read_structure_bytes_strict(
+                        input_file.getvalue(), suffix=suffix, label="Input structure"
+                    )
+                else:
+                    representative_atoms = read_structure_file_strict(existing_input, label="Input structure")
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(representative_atoms, int(charge), int(mult), label="Input structure")
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+                fixed_errors, fixed_warnings = split_issues(
+                    validate_scan_constraints([], fixed_atoms, len(representative_atoms))
+                )
+                errors.extend(fixed_errors)
+                validation_warnings.extend(fixed_warnings)
+
+        except Exception as exc:
+            errors.append(f"Input validation failed: {exc}")
+
     if errors:
         for message in errors:
             st.error(message)
         return
+    for message in validation_warnings:
+        st.warning(message, icon=":material/warning:")
     for message in scan_resolution_notes:
         st.info(message, icon=":material/info:")
 
@@ -3685,15 +3771,75 @@ def render_concat_submission(session: dict) -> None:
         if not selected_existing:
             errors.append(t('Select at least one existing file.'))
 
-    if errors:
-        for message in errors:
-            st.error(message)
-        return
+    validation_warnings: list[str] = []
+    validation_config = {
+        "CALC_TYPE": effective_method,
+        "REFINE_ENERGY_ON": bool(do_refine),
+        "REFINE_CALC_TYPE": str(module_settings["refine_calc_type"]),
+        "SCAN_MF_ON": False,
+        "ALPB_SOLVENT": str(alpb_solvent),
+    }
+    pyscf_validation_config = session.get("pyscf_config", default_pyscf_config())
+    _, solvent_warnings = split_issues(
+        validate_mixed_level_solvation(validation_config, pyscf_validation_config)
+    )
+    validation_warnings.extend(solvent_warnings)
+
+    representative_atoms = None
+    if not errors:
+        try:
+            structure_sources = []
+            if source_mode == t('Upload files'):
+                for uploaded in uploaded_files or []:
+                    suffix = Path(uploaded.name).suffix or ".xyz"
+                    structure_sources.append((
+                        uploaded.name,
+                        read_structure_bytes_strict(
+                            uploaded.getvalue(), suffix=suffix, label=f"CAT input '{uploaded.name}'"
+                        ),
+                    ))
+            else:
+                for existing in selected_existing:
+                    structure_sources.append((
+                        existing.name,
+                        read_structure_file_strict(existing, label=f"CAT input '{existing.name}'"),
+                    ))
+
+            for index, (name, atoms) in enumerate(structure_sources):
+                if representative_atoms is None:
+                    representative_atoms = atoms
+                else:
+                    pair_errors, pair_warnings = split_issues(
+                        validate_endpoint_pair(
+                            representative_atoms,
+                            atoms,
+                            left_label="First CAT input",
+                            right_label=f"CAT input '{name}'",
+                        )
+                    )
+                    errors.extend(pair_errors)
+                    validation_warnings.extend(pair_warnings)
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(atoms, int(charge), int(mult), label=f"CAT input '{name}'")
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+
+            if representative_atoms is not None and not errors:
+                fixed_errors, fixed_warnings = split_issues(
+                    validate_scan_constraints([], fixed_atoms, len(representative_atoms))
+                )
+                errors.extend(fixed_errors)
+                validation_warnings.extend(fixed_warnings)
+        except Exception as exc:
+            errors.append(f"Input validation failed: {exc}")
 
     if errors:
         for message in errors:
             st.error(message)
         return
+    for message in validation_warnings:
+        st.warning(message, icon=":material/warning:")
 
     job = create_job(session_id=session_id, owner_label=owner_label, workflow="Concatenation & Batch")
     job["charge"] = int(charge)
