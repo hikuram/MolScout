@@ -847,14 +847,18 @@ def find_molscout_log(files: list[Path], run_dir: Path) -> Path | None:
     return matches[0] if matches else None
 
 
-def render_molscout_log_expander(files: list[Path], run_dir: Path) -> None:
+def render_molscout_log_expander(files: list[Path], run_dir: Path, *, key: str) -> None:
     log_path = find_molscout_log(files, run_dir)
     with st.expander(t('Show molscout.log'), expanded=False):
         if log_path is None:
             st.info(t('molscout.log is not available yet.'))
             return
         st.caption(f"log file: `{log_path.relative_to(run_dir)}`")
-        render_log_viewer(tail_text(log_path, max_lines=500) or "(empty file)", height=320)
+        render_log_viewer(
+            tail_text(log_path, max_lines=500) or "(empty file)",
+            key=key,
+            height=320,
+        )
 
 
 def parse_int_list(value: str) -> list[int]:
@@ -2402,7 +2406,7 @@ def sidebar_monitor_fragment() -> None:
     with st.expander("Worker log", expanded=False):
         log_text = tail_text(WORKER_LOG_FILE, max_lines=80) or "No worker log yet."
         log_text = format_worker_log_time(log_text)
-        render_log_viewer(log_text, height=200)
+        render_log_viewer(log_text, key="monitor_worker_log", height=200)
 
 
 def render_queue_panel() -> None:
@@ -4214,15 +4218,25 @@ def render_job_results(job: dict) -> None:
         rows = [{"path": str(path.relative_to(run_dir)), "size": file_size_label(path)} for path in files]
         if rows:
             st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
-            render_molscout_log_expander(files, run_dir)
+            render_molscout_log_expander(
+                files,
+                run_dir,
+                key=f"overview_molscout_log_{job['job_id']}",
+            )
         else:
             st.info("Calculation outputs are not available yet. Job JSON files can be viewed in the Json tab.")
     elif result_view == "Logs":
         log_files = [path for path in files if path.suffix.lower() in LOG_EXTENSIONS]
         if log_files:
             labels = [str(path.relative_to(run_dir)) for path in log_files]
-            selected = log_files[labels.index(st.selectbox("Log file", labels, key=f"log_{job['job_id']}"))]
-            render_log_viewer(tail_text(selected, max_lines=500) or "(empty file)", height=360)
+            selected_label = st.selectbox("Log file", labels, key=f"log_{job['job_id']}")
+            selected_index = labels.index(selected_label)
+            selected = log_files[selected_index]
+            render_log_viewer(
+                tail_text(selected, max_lines=500) or "(empty file)",
+                key=f"result_log_{job['job_id']}_{selected_index}",
+                height=360,
+            )
         else:
             st.info(t('No .log files.'))
     elif result_view == "Json":

@@ -186,7 +186,11 @@ def open_samples_dialog() -> None:
 @st.dialog("Worker log")
 def open_worker_log_dialog() -> None:
     log_text = tail_text(WORKER_LOG_FILE, max_lines=160) or "No worker log yet."
-    render_log_viewer(format_worker_log_time(log_text), height=420)
+    render_log_viewer(
+        format_worker_log_time(log_text),
+        key="worker_log_dialog",
+        height=420,
+    )
 
 
 def get_selected_session() -> dict | None:

@@ -41,7 +41,11 @@ else:
 
         if log_path:
             st.caption(f"log file: `{log_path.relative_to(output_dir)}`")
-            render_log_viewer(tail_text(log_path, max_lines=500) or "(empty file)", height=300)
+            render_log_viewer(
+                tail_text(log_path, max_lines=500) or "(empty file)",
+                key=f"queue_running_log_{job['job_id']}",
+                height=300,
+            )
         else:
             st.caption(t('molscout.log has not been generated yet.'))
 
