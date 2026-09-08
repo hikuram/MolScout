@@ -79,17 +79,63 @@ def scan_trajectory_files(root_text: str, include_xyz: bool, max_files: int) -> 
     return df.sort_values(["modified", "rel_path"], ascending=[False, True]).reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False)
-def load_structures(path_text: str, mtime_ns: int, size_bytes: int, max_frames: int) -> list[Any]:
+def _read_limited_structures(
+    path_text: str,
+    max_frames: int,
+    *,
+    file_format: str | None = None,
+) -> list[Any]:
     import ase.io
 
-    del mtime_ns, size_bytes
     frames: list[Any] = []
-    for atoms in ase.io.iread(path_text, index=":"):
+    kwargs: dict[str, Any] = {"index": ":"}
+    if file_format is not None:
+        kwargs["format"] = file_format
+
+    for atoms in ase.io.iread(path_text, **kwargs):
         frames.append(atoms)
         if max_frames > 0 and len(frames) >= max_frames:
             break
     return frames
+
+
+@st.cache_data(show_spinner=False)
+def load_structures(path_text: str, mtime_ns: int, size_bytes: int, max_frames: int) -> list[Any]:
+    """Load structures for the Chemiscope preview.
+
+    ASE treats ``.xyz`` files as extended XYZ by default. Some MolScout or
+    externally edited XYZ files contain stale/malformed extended-XYZ metadata
+    even though their element/coordinate columns are still valid. In that
+    case, retry as plain XYZ so Chemiscope can still display the structures.
+
+    The fallback intentionally discards extended metadata such as energies,
+    forces, and custom per-atom fields. Native ``.traj`` files keep the normal
+    ASE read path and therefore preserve their metadata.
+    """
+    del mtime_ns, size_bytes
+
+    suffix = Path(path_text).suffix.lower()
+    if suffix in {".xyz", ".extxyz"}:
+        try:
+            return _read_limited_structures(
+                path_text,
+                max_frames,
+                file_format="extxyz",
+            )
+        except Exception as extxyz_error:
+            try:
+                return _read_limited_structures(
+                    path_text,
+                    max_frames,
+                    file_format="xyz",
+                )
+            except Exception as xyz_error:
+                raise RuntimeError(
+                    f"Failed to read XYZ file '{Path(path_text).name}' as either "
+                    f"extended XYZ ({extxyz_error}) or plain XYZ ({xyz_error})."
+                ) from xyz_error
+
+    return _read_limited_structures(path_text, max_frames)
 
 
 @st.cache_data(show_spinner=False)
