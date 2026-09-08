@@ -8,6 +8,7 @@ import streamlit as st
 from app_ui.i18n import t
 
 from app_ui.views import render_queue_panel, render_session_overview
+from app_ui.log_viewer import render_log_viewer
 from app_ui.sidebar import get_selected_session
 
 from app_core.queue_manager import sync_queue_state
@@ -40,7 +41,7 @@ else:
 
         if log_path:
             st.caption(f"log file: `{log_path.relative_to(output_dir)}`")
-            st.code(tail_text(log_path, max_lines=200) or "(empty file)", language="text")
+            render_log_viewer(tail_text(log_path, max_lines=500) or "(empty file)", height=300)
         else:
             st.caption(t('molscout.log has not been generated yet.'))
 

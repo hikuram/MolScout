@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from app_ui.i18n import t, tf
+from app_ui.log_viewer import render_log_viewer
 
 from app_core.archive_manager import (
     build_job_archive,
@@ -853,7 +854,7 @@ def render_molscout_log_expander(files: list[Path], run_dir: Path) -> None:
             st.info(t('molscout.log is not available yet.'))
             return
         st.caption(f"log file: `{log_path.relative_to(run_dir)}`")
-        st.code(tail_text(log_path, max_lines=500) or "(empty file)", language="text")
+        render_log_viewer(tail_text(log_path, max_lines=500) or "(empty file)", height=320)
 
 
 def parse_int_list(value: str) -> list[int]:
@@ -2401,7 +2402,7 @@ def sidebar_monitor_fragment() -> None:
     with st.expander("Worker log", expanded=False):
         log_text = tail_text(WORKER_LOG_FILE, max_lines=80) or "No worker log yet."
         log_text = format_worker_log_time(log_text)
-        st.text_area("Log", value=log_text, height=200, disabled=True, label_visibility="collapsed")
+        render_log_viewer(log_text, height=200)
 
 
 def render_queue_panel() -> None:
@@ -4221,7 +4222,7 @@ def render_job_results(job: dict) -> None:
         if log_files:
             labels = [str(path.relative_to(run_dir)) for path in log_files]
             selected = log_files[labels.index(st.selectbox("Log file", labels, key=f"log_{job['job_id']}"))]
-            st.code(tail_text(selected, max_lines=280) or "(empty file)", language="text")
+            render_log_viewer(tail_text(selected, max_lines=500) or "(empty file)", height=360)
         else:
             st.info(t('No .log files.'))
     elif result_view == "Json":

@@ -13,6 +13,7 @@ from app_ui.i18n import t, tf
 from app_core.paths import WORKER_LOG_FILE
 from app_core.session_manager import create_session, list_jobs, list_sessions, touch_session
 from app_core.utils import tail_text
+from app_ui.log_viewer import render_log_viewer
 from app_ui.views import (
     dependency_rows,
     format_app_time,
@@ -185,13 +186,7 @@ def open_samples_dialog() -> None:
 @st.dialog("Worker log")
 def open_worker_log_dialog() -> None:
     log_text = tail_text(WORKER_LOG_FILE, max_lines=160) or "No worker log yet."
-    st.text_area(
-        "Log",
-        value=format_worker_log_time(log_text),
-        height=420,
-        disabled=True,
-        label_visibility="collapsed",
-    )
+    render_log_viewer(format_worker_log_time(log_text), height=420)
 
 
 def get_selected_session() -> dict | None:
