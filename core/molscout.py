@@ -33,7 +33,7 @@ from pyscf_exporter import export_pyscf_single_point
 # --- Separated Modules ---
 from ase_calculators import make_calculator, get_pyscf_profile, get_solvation_info, load_pyscf_config
 from traj_utils import extract_peaks_from_traj, traj_to_xyz, write_energies, \
-    split_traj_to_xyz, generate_path_concat
+    split_traj_to_xyz, generate_path_concat, normalize_single_input_to_traj
 from utils import log, read
 from config_manager import apply_config, apply_config_file, config_to_dict, save_config
 from input_validation import (
@@ -1920,6 +1920,16 @@ if __name__ == '__main__':
             val = getattr(g, key)
             log("Config", f"{key} = {val}")
     log("System", "---------------------------------")
+
+    # Canonicalize non-path single-input workflows once at the Core boundary.
+    # Validation above intentionally runs against the original user-supplied file;
+    # downstream routines can continue to rely on ASE ULM trajectory semantics.
+    if not getattr(g, 'INIT_PATH_SEARCH_ON', True):
+        try:
+            g.I_TRAJ = normalize_single_input_to_traj(g.I_TRAJ)
+        except Exception as exc:
+            log("Fail", f"Could not normalize single-input structure file: {exc}")
+            sys.exit("abort: single-input normalization failed")
     
     # == Main Execution Flow ==
     if getattr(g, 'INIT_PATH_SEARCH_ON', True):
