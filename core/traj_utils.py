@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from typing import List, Optional
 from ase import Atoms
-from ase.io import write
+from ase.io import read as read_ase, write
 from ase.io.trajectory import Trajectory
 from scipy.signal import find_peaks
 from utils import log, read
@@ -119,6 +119,71 @@ def traj_to_xyz(traj, out_xyz_path):
         write(out_xyz_path, traj)
     except Exception as e:
         log("Warn", f"An error occurred while writing {out_xyz_path}: {e}")
+
+def normalize_single_input_to_traj(input_name: str, output_name: str = "working_input.traj") -> str:
+    """Normalize a single-input coordinate file to an ASE trajectory.
+
+    External single-input workflows may receive either ``.traj`` or XYZ-like
+    coordinate files.  Downstream MolScout code historically assumes ULM
+    trajectory input, so non-trajectory inputs are converted once at the Core
+    boundary while the original copied file is left untouched.
+
+    XYZ handling is deliberately defensive: first preserve valid extXYZ
+    metadata when ASE can read it, then fall back to plain XYZ parsing, and
+    finally use MolScout's metadata-agnostic reader for damaged headers.
+    """
+    input_name = str(input_name)
+    if input_name.lower().endswith(".traj"):
+        return input_name
+
+    suffix = os.path.splitext(input_name)[1].lower()
+    frames = None
+    standard_error = None
+
+    try:
+        frames = read_ase(input_name, index=":")
+    except Exception as exc:
+        standard_error = exc
+
+    if frames is None and suffix in {".xyz", ".extxyz"}:
+        log(
+            "Warn",
+            f"Standard XYZ/extXYZ read failed for {input_name}: {standard_error}. "
+            "Retrying as plain XYZ.",
+        )
+        try:
+            frames = read_ase(input_name, index=":", format="xyz")
+        except Exception as plain_error:
+            log(
+                "Warn",
+                f"Plain XYZ read also failed for {input_name}: {plain_error}. "
+                "Falling back to MolScout coordinate-only parsing.",
+            )
+            frames = read(input_name, index=":")
+
+    if frames is None:
+        raise ValueError(
+            f"Unsupported or unreadable single-input format for '{input_name}'. "
+            "Use an ASE .traj file or an XYZ/extXYZ coordinate file."
+        ) from standard_error
+
+    if isinstance(frames, Atoms):
+        frames = [frames]
+    else:
+        frames = list(frames)
+    if not frames:
+        raise ValueError(f"No structures were found in '{input_name}'.")
+
+    with Trajectory(output_name, "w") as trajectory:
+        for atoms in frames:
+            trajectory.write(atoms)
+
+    log(
+        "I/O",
+        f"Normalized single-input file {input_name} to {output_name} "
+        f"({len(frames)} frame(s)); original input preserved.",
+    )
+    return output_name
 
 def write_energies(traj_name, csv_name=None, energy_recalc=False, previous_image=None):
     """

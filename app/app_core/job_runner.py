@@ -8,13 +8,14 @@ import shlex
 import signal
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 from .artifact_manager import scan_job_artifacts
 from .config import OUTPUT_CATEGORY_DIRS, WORKFLOW_LABELS
 from .paths import APP_DIR, CORE_DIR, PROJECT_ROOT
 from .session_manager import get_job, save_job
-from .utils import now_iso, pid_is_running, read_json
+from .utils import now_iso, parse_iso, read_json
 
 FAILURE_MARKERS = (
     "Traceback (most recent call last):",
@@ -22,6 +23,92 @@ FAILURE_MARKERS = (
     "[Fail",
     "Canceled:",
 )
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        return default
+
+
+CANCEL_GRACE_SECONDS = max(1.0, _env_float("MOLSCOUT_CANCEL_GRACE_SECONDS", 15.0))
+FORCE_KILL_SETTLE_SECONDS = 5.0
+
+
+def process_group_id(job: dict) -> int | None:
+    value = job.get("process_group_id") or job.get("pid")
+    try:
+        pgid = int(value)
+    except (TypeError, ValueError):
+        return None
+    return pgid if pgid > 0 else None
+
+
+def _proc_stat_group(stat_text: str) -> tuple[str, int] | None:
+    right_paren = stat_text.rfind(")")
+    if right_paren < 0:
+        return None
+    fields = stat_text[right_paren + 1 :].strip().split()
+    if len(fields) < 3:
+        return None
+    try:
+        return fields[0], int(fields[2])
+    except ValueError:
+        return None
+
+
+def process_group_is_running(pgid: int | None) -> bool:
+    if not pgid or pgid <= 0:
+        return False
+    try:
+        os.killpg(pgid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+
+    proc_root = Path("/proc")
+    if not proc_root.exists():
+        return True
+
+    target_seen = False
+    try:
+        entries = list(proc_root.iterdir())
+    except OSError:
+        return True
+    for entry in entries:
+        if not entry.name.isdigit():
+            continue
+        try:
+            parsed = _proc_stat_group((entry / "stat").read_text(encoding="utf-8", errors="replace"))
+        except OSError:
+            continue
+        if parsed is None:
+            continue
+        state, process_pgid = parsed
+        if process_pgid != pgid:
+            continue
+        target_seen = True
+        if state != "Z":
+            return True
+    # killpg(0) can still succeed for a group containing zombies only. If the
+    # target group could not be inspected, keep treating it as live (fail safe).
+    return False if target_seen else True
+
+
+def seconds_since(value: str | None) -> float | None:
+    stamp = parse_iso(value)
+    if stamp is None:
+        return None
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return max(0.0, (datetime.now(timezone.utc) - stamp).total_seconds())
 
 
 def runtime_status_path_for(stdout_log: Path) -> Path:
@@ -139,13 +226,18 @@ def validate_job_outputs(job: dict) -> tuple[bool, str]:
     return True, ""
 
 
-def finalize_job(job: dict, runtime: dict, exit_code: int | None, *, pid_running: bool) -> dict:
+def finalize_job(job: dict, runtime: dict, exit_code: int | None, *, process_group_running: bool) -> dict:
     requested_cancel = bool(job.get("cancel_requested_at"))
     runtime_phase = runtime.get("phase", "")
     failure_marker = find_failure_marker(job)
 
     if requested_cancel:
-        if runtime_phase == "cancelled" or exit_code in {130, 143} or (not pid_running and exit_code is None):
+        if job.get("force_kill_sent_at"):
+            job["status"] = "cancelled"
+            job["completion_reason"] = "force_killed_after_cancel_timeout"
+            job["status_message"] = "Cancellation required SIGKILL after the graceful-stop timeout."
+            job["exit_code"] = 137
+        elif runtime_phase == "cancelled" or exit_code in {130, 143} or (not process_group_running and exit_code is None):
             job["status"] = "cancelled"
             job["completion_reason"] = "cancelled_by_user"
             job["status_message"] = "stopped by user cancellation."
@@ -371,6 +463,7 @@ exit "$code"
         )
 
     job["pid"] = proc.pid
+    job["process_group_id"] = proc.pid
     job["status"] = "running"
     job["started_at"] = now_iso()
     job["updated_at"] = now_iso()
@@ -380,6 +473,7 @@ exit "$code"
     job["completion_reason"] = ""
     job["status_message"] = ""
     job["cancel_requested_at"] = None
+    job["force_kill_sent_at"] = None
     save_job(job)
     return job
 
@@ -397,31 +491,98 @@ def sync_job_status(job: dict) -> dict:
     if runtime.get("exit_code") is not None:
         exit_code = runtime["exit_code"]
 
-    if job.get("status") in {"running", "cancel_requested"}:
-        pid_running = pid_is_running(job.get("pid"))
-        if exit_code is not None:
-            job["exit_code"] = exit_code
-            finalize_job(job, runtime, exit_code, pid_running=pid_running)
-        elif pid_running:
-            return job
+    if job.get("status") not in {"running", "cancel_requested"}:
+        return job
+
+    pgid = process_group_id(job)
+    group_running = process_group_is_running(pgid)
+
+    if job.get("status") == "cancel_requested" and group_running:
+        force_kill_sent_at = job.get("force_kill_sent_at")
+        if not force_kill_sent_at:
+            elapsed = seconds_since(job.get("cancel_requested_at"))
+            if elapsed is None:
+                job["cancel_requested_at"] = now_iso()
+                job["status_message"] = (
+                    f"Cancellation is pending. Waiting up to {CANCEL_GRACE_SECONDS:.0f} seconds "
+                    "before forced termination."
+                )
+                save_job(job)
+                return job
+            if elapsed >= CANCEL_GRACE_SECONDS:
+                try:
+                    os.killpg(pgid, signal.SIGKILL)
+                except ProcessLookupError:
+                    group_running = False
+                except PermissionError:
+                    job["status_message"] = (
+                        "SIGKILL escalation failed with permission denied. "
+                        "The queue remains held until the process group stops."
+                    )
+                    save_job(job)
+                    return job
+                else:
+                    job["force_kill_sent_at"] = now_iso()
+                    job["status_message"] = (
+                        "Graceful cancellation timed out; SIGKILL was sent to the process group. "
+                        "Waiting for stop confirmation before advancing the queue."
+                    )
+                    save_job(job)
+                    return job
         else:
-            finalize_job(job, runtime, None, pid_running=pid_running)
-        save_job(job)
+            force_elapsed = seconds_since(force_kill_sent_at)
+            if force_elapsed is not None and force_elapsed >= FORCE_KILL_SETTLE_SECONDS:
+                message = (
+                    "SIGKILL was sent, but the process group is still active. "
+                    "The queue is held for safety; container or host intervention may be required."
+                )
+                if job.get("status_message") != message:
+                    job["status_message"] = message
+                    save_job(job)
+            return job
+
+    if group_running:
+        if exit_code is not None:
+            message = (
+                "The wrapper process exited, but processes remain in the job process group. "
+                "The queue is held until the group stops."
+            )
+            if job.get("status_message") != message:
+                job["status_message"] = message
+                save_job(job)
+        return job
+
+    if job.get("force_kill_sent_at"):
+        exit_code = 137
+    if exit_code is not None:
+        job["exit_code"] = exit_code
+        finalize_job(job, runtime, exit_code, process_group_running=False)
+    else:
+        finalize_job(job, runtime, None, process_group_running=False)
+    save_job(job)
     return job
 
 
 def stop_job(job: dict) -> str:
-    pid = job.get("pid")
-    if not pid_is_running(pid):
+    pgid = process_group_id(job)
+    if not process_group_is_running(pgid):
         return "not_running"
     try:
-        os.killpg(pid, signal.SIGTERM)
+        os.killpg(pgid, signal.SIGTERM)
     except ProcessLookupError:
         return "not_running"
+    except PermissionError:
+        job["status_message"] = "Cancellation failed: permission denied while signaling the process group."
+        save_job(job)
+        return "error"
     job["status"] = "cancel_requested"
     job["cancel_requested_at"] = now_iso()
+    job["force_kill_sent_at"] = None
     job["completion_reason"] = ""
-    job["status_message"] = "Cancellation signal sent. Waiting for the process group to stop."
+    job["status_message"] = (
+        f"SIGTERM sent to the process group. Waiting up to {CANCEL_GRACE_SECONDS:.0f} seconds "
+        "before forced termination."
+    )
     save_job(job)
     return "signaled"
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from .job_runner import start_job_process, sync_job_status
 from .paths import WORKER_PID_FILE
 from .session_manager import delete_job_files, get_job, get_session, list_jobs, reorder_session_jobs, save_job, save_session
+from .system_monitor import storage_admission_status
 from .storage import mutate_queue_state, read_queue_state
 from .utils import now_iso, pid_is_running
 
@@ -132,6 +133,8 @@ def sync_queue_state() -> dict:
             for item in state["jobs"]
             if item["status"] in {"queued", "running", "cancel_requested"}
         ]
+        if not any(item["status"] == "queued" for item in state["jobs"]):
+            state["dispatch_hold"] = None
         return state
 
     state = mutate_queue_state(mutator)
@@ -143,10 +146,27 @@ def sync_queue_state() -> dict:
 def run_next_queued_job() -> dict:
     def mutator(state: dict):
         if state.get("running_job_id"):
+            state["dispatch_hold"] = None
             return state
         next_item = next((item for item in state["jobs"] if item["status"] == "queued"), None)
         if not next_item:
+            state["dispatch_hold"] = None
             return state
+
+        admission = storage_admission_status()
+        if not admission["allowed"]:
+            existing_hold = state.get("dispatch_hold") or {}
+            state["dispatch_hold"] = {
+                "reason": admission["reason"],
+                "code": admission["code"],
+                "since": existing_hold.get("since") or now_iso(),
+                "checked_at": now_iso(),
+                "used_pct": admission["disk"].get("used_pct"),
+                "free_gb": admission["disk"].get("free_gb"),
+            }
+            return state
+
+        state["dispatch_hold"] = None
         job = get_job(next_item["session_id"], next_item["job_id"])
         if not job:
             state["jobs"] = [item for item in state["jobs"] if item.get("queue_key") != next_item.get("queue_key")]

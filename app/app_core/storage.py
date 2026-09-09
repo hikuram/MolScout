@@ -25,6 +25,7 @@ def default_queue_state() -> dict:
     return {
         "updated_at": now_iso(),
         "running_job_id": None,
+        "dispatch_hold": None,
         "jobs": [],
     }
 

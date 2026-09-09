@@ -17,6 +17,7 @@ from app_core.trajectory_viewer import (
     build_frame_table,
     finite_column,
     load_structures,
+    render_passive_chemiscope,
     scan_trajectory_files,
     trajectory_to_extxyz,
     viewer_key,
@@ -271,13 +272,33 @@ try:
     )
     with st.expander("Chemiscope settings", expanded=False):
         st.json(settings)
-    chemiscope.streamlit.viewer(
-        dataset,
-        mode=str(mode or "default"),
-        key=viewer_key(str(selected_path), len(structures)),
-        width="stretch",
-        height=720,
+
+    viewer_mode = str(mode or "default")
+    viewer_identity = (
+        f"{selected_path}|join={int(bool(join_points))}"
+        f"|delay={int(playback_delay)}"
     )
+    component_key = viewer_key(
+        viewer_identity,
+        len(structures),
+        viewer_mode,
+        int(selected_row["mtime_ns"]),
+    )
+
+    @st.fragment
+    def render_chemiscope():
+        # Keep animation state inside Chemiscope. The official Streamlit wrapper
+        # echoes the active structure index back to Python and can re-apply a
+        # stale index on the next rerun while an animation is still advancing.
+        render_passive_chemiscope(
+            dataset,
+            mode=viewer_mode,
+            key=component_key,
+            width="stretch",
+            height=720,
+        )
+
+    render_chemiscope()
 except ImportError as error:
     render_dependency_hint(error)
 except Exception as error:

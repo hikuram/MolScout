@@ -32,6 +32,46 @@ FORCE_KEYS = (
 DEFAULT_MAX_FRAMES = 400
 
 
+_PASSIVE_CHEMISCOPE_COMPONENT = None
+
+
+def render_passive_chemiscope(
+    dataset: dict[str, Any],
+    *,
+    mode: str,
+    key: str,
+    width: str | int = "stretch",
+    height: int = 720,
+) -> None:
+    """Render Chemiscope without echoing selection state back from Python."""
+    global _PASSIVE_CHEMISCOPE_COMPONENT
+
+    if _PASSIVE_CHEMISCOPE_COMPONENT is None:
+        import chemiscope.streamlit
+        import streamlit.components.v1 as components
+
+        component_dir = Path(chemiscope.streamlit.__file__).resolve().parent
+        _PASSIVE_CHEMISCOPE_COMPONENT = components.declare_component(
+            "molscout_chemiscope_viewer",
+            path=str(component_dir),
+        )
+
+    if mode not in ("default", "structure", "map"):
+        raise ValueError(
+            f"Invalid mode '{mode}', expected 'default', 'structure', or 'map'"
+        )
+
+    _PASSIVE_CHEMISCOPE_COMPONENT(
+        dataset=dataset,
+        mode=mode,
+        key=key,
+        width=width,
+        height=height,
+        no_info_panel=False,
+        default=None,
+    )
+
+
 def safe_resolve(path_text: str) -> Path | None:
     try:
         return Path(path_text).expanduser().resolve()
@@ -79,17 +119,63 @@ def scan_trajectory_files(root_text: str, include_xyz: bool, max_files: int) -> 
     return df.sort_values(["modified", "rel_path"], ascending=[False, True]).reset_index(drop=True)
 
 
-@st.cache_data(show_spinner=False)
-def load_structures(path_text: str, mtime_ns: int, size_bytes: int, max_frames: int) -> list[Any]:
+def _read_limited_structures(
+    path_text: str,
+    max_frames: int,
+    *,
+    file_format: str | None = None,
+) -> list[Any]:
     import ase.io
 
-    del mtime_ns, size_bytes
     frames: list[Any] = []
-    for atoms in ase.io.iread(path_text, index=":"):
+    kwargs: dict[str, Any] = {"index": ":"}
+    if file_format is not None:
+        kwargs["format"] = file_format
+
+    for atoms in ase.io.iread(path_text, **kwargs):
         frames.append(atoms)
         if max_frames > 0 and len(frames) >= max_frames:
             break
     return frames
+
+
+@st.cache_data(show_spinner=False)
+def load_structures(path_text: str, mtime_ns: int, size_bytes: int, max_frames: int) -> list[Any]:
+    """Load structures for the Chemiscope preview.
+
+    ASE treats ``.xyz`` files as extended XYZ by default. Some MolScout or
+    externally edited XYZ files contain stale/malformed extended-XYZ metadata
+    even though their element/coordinate columns are still valid. In that
+    case, retry as plain XYZ so Chemiscope can still display the structures.
+
+    The fallback intentionally discards extended metadata such as energies,
+    forces, and custom per-atom fields. Native ``.traj`` files keep the normal
+    ASE read path and therefore preserve their metadata.
+    """
+    del mtime_ns, size_bytes
+
+    suffix = Path(path_text).suffix.lower()
+    if suffix in {".xyz", ".extxyz"}:
+        try:
+            return _read_limited_structures(
+                path_text,
+                max_frames,
+                file_format="extxyz",
+            )
+        except Exception as extxyz_error:
+            try:
+                return _read_limited_structures(
+                    path_text,
+                    max_frames,
+                    file_format="xyz",
+                )
+            except Exception as xyz_error:
+                raise RuntimeError(
+                    f"Failed to read XYZ file '{Path(path_text).name}' as either "
+                    f"extended XYZ ({extxyz_error}) or plain XYZ ({xyz_error})."
+                ) from xyz_error
+
+    return _read_limited_structures(path_text, max_frames)
 
 
 @st.cache_data(show_spinner=False)
@@ -228,26 +314,37 @@ def build_chemiscope_dataset(
         },
     }
 
+    chemiscope_numeric: set[str] = set()
     for column, units in [
         ("energy", "eV"),
         ("relative_energy", "eV"),
         ("max_force", "eV/Ang"),
         ("mean_force", "eV/Ang"),
     ]:
-        if column in frame_table and finite_column(frame_table, column):
-            properties[column] = {
-                "target": "structure",
-                "values": [math.nan if pd.isna(value) else float(value) for value in frame_table[column].tolist()],
-                "units": units,
-            }
+        if column not in frame_table:
+            continue
+        values = pd.to_numeric(
+            frame_table[column], errors="coerce"
+        ).to_numpy(dtype=float)
+        # Chemiscope properties are serialized as strict JSON number arrays.
+        # Keep partial/missing data in the Streamlit frame table, but do not
+        # send NaN/Inf values to the Chemiscope component.
+        if len(values) != n_frames or not np.isfinite(values).all():
+            continue
+        properties[column] = {
+            "target": "structure",
+            "values": values.tolist(),
+            "units": units,
+        }
+        chemiscope_numeric.add(column)
 
-    if finite_column(frame_table, "relative_energy"):
+    if "relative_energy" in chemiscope_numeric:
         y_prop = "relative_energy"
         color_prop = "relative_energy"
-    elif finite_column(frame_table, "energy"):
+    elif "energy" in chemiscope_numeric:
         y_prop = "energy"
         color_prop = "energy"
-    elif finite_column(frame_table, "max_force"):
+    elif "max_force" in chemiscope_numeric:
         y_prop = "max_force"
         color_prop = "max_force"
     else:
@@ -277,6 +374,8 @@ def build_chemiscope_dataset(
     return dataset, settings
 
 
-def viewer_key(path_text: str, n_frames: int) -> str:
-    digest = hashlib.sha1(f"{path_text}:{n_frames}".encode("utf-8")).hexdigest()
+def viewer_key(path_text: str, n_frames: int, mode: str, mtime_ns: int) -> str:
+    digest = hashlib.sha1(
+        f"{path_text}:{n_frames}:{mode}:{mtime_ns}".encode("utf-8")
+    ).hexdigest()
     return f"chemiscope_viewer_{digest[:12]}"

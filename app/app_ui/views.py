@@ -20,6 +20,7 @@ import pandas as pd
 import streamlit as st
 
 from app_ui.i18n import t, tf
+from app_ui.log_viewer import render_log_viewer
 
 from app_core.archive_manager import (
     build_job_archive,
@@ -71,8 +72,19 @@ from app_core.session_manager import (
     session_dir,
     touch_session,
 )
-from app_core.system_monitor import system_snapshot
+from app_core.system_monitor import storage_admission_status, system_snapshot
 from app_core.utils import file_size_label, now_iso, safe_name, tail_text
+from input_validation import (
+    ALPB_TO_SMD_SOLVENT,
+    read_structure_bytes_strict,
+    read_structure_file_strict,
+    split_issues,
+    validate_charge_spin,
+    validate_endpoint_pair,
+    validate_mixed_level_solvation,
+    validate_pyscf_config_for_save,
+    validate_scan_constraints,
+)
 
 REFRESHABLE_JOB_STATUSES = {"running", "cancel_requested", "queued"}
 APP_TZ = ZoneInfo("Asia/Tokyo")
@@ -835,14 +847,18 @@ def find_molscout_log(files: list[Path], run_dir: Path) -> Path | None:
     return matches[0] if matches else None
 
 
-def render_molscout_log_expander(files: list[Path], run_dir: Path) -> None:
+def render_molscout_log_expander(files: list[Path], run_dir: Path, *, key: str) -> None:
     log_path = find_molscout_log(files, run_dir)
     with st.expander(t('Show molscout.log'), expanded=False):
         if log_path is None:
             st.info(t('molscout.log is not available yet.'))
             return
         st.caption(f"log file: `{log_path.relative_to(run_dir)}`")
-        st.code(tail_text(log_path, max_lines=500) or "(empty file)", language="text")
+        render_log_viewer(
+            tail_text(log_path, max_lines=500) or "(empty file)",
+            key=key,
+            height=320,
+        )
 
 
 def parse_int_list(value: str) -> list[int]:
@@ -1679,21 +1695,7 @@ def render_method_live_controls(
     orbmol_key = f"{prefix}_orbmol_version"
     alpb_key = f"{prefix}_alpb_solvent"
     ui_method_options = [m for m in METHOD_OPTIONS if m != "orbmol+alpb"]
-    alpb_options = [
-        "None",
-        "water",
-        "acetonitrile",
-        "methanol",
-        "ethanol",
-        "ch2cl2",
-        "thf",
-        "toluene",
-        "dmf",
-        "dmso",
-        "acetone",
-        "dioxane",
-        "ether",
-    ]
+    alpb_options = ["None", *ALPB_TO_SMD_SOLVENT]
     alpb_labels = {
         "ch2cl2": "ch2cl2 (dichloromethane)",
     }
@@ -2234,7 +2236,12 @@ def render_queue_status_card(queue_state_label: str, queued_count: int, running_
         extra_bits.append(f"{running_count} running")
     if stopping_count:
         extra_bits.append(f"{stopping_count} stopping")
-    extra_text = " | ".join(extra_bits) if extra_bits else "No active worker task"
+    if extra_bits:
+        extra_text = " | ".join(extra_bits)
+    elif queue_state_label == "Held":
+        extra_text = "Dispatch paused by storage protection"
+    else:
+        extra_text = "No active worker task"
     st.markdown(
         f"""
 <div class="status-card">
@@ -2254,6 +2261,7 @@ def sidebar_monitor_fragment() -> None:
     queued_count = sum(item["status"] == "queued" for item in queue["jobs"])
     running_count = sum(item["status"] == "running" for item in queue["jobs"])
     stopping_count = sum(item["status"] == "cancel_requested" for item in queue["jobs"])
+    dispatch_hold = queue.get("dispatch_hold")
 
     st.markdown("## :material/monitoring: Monitor")
     st.caption("Live server and queue status")
@@ -2264,7 +2272,11 @@ def sidebar_monitor_fragment() -> None:
     queue_state = "Running" if running_count else "Idle"
     if stopping_count:
         queue_state = "Stopping"
+    elif dispatch_hold and queued_count:
+        queue_state = "Held"
     render_queue_status_card(queue_state, queued_count, running_count, stopping_count)
+    if dispatch_hold and queued_count:
+        st.warning(f"Queue dispatch paused by storage protection: {dispatch_hold.get('reason', 'storage limit reached')}")
     
     # --- CPU Util & GPU Util ---
     load_cols = st.columns(2)
@@ -2317,6 +2329,39 @@ def sidebar_monitor_fragment() -> None:
         chart_max=100,
     )
     
+    # --- Disk ---
+    storage_admission = snapshot.get("storage_admission", {})
+    disk_used = disk.get("used_gb")
+    disk_total = disk.get("total_gb")
+    disk_free = disk.get("free_gb")
+    disk_pct = disk.get("used_pct")
+    disk_history = append_monitor_history(
+        "disk_used_pct",
+        disk_pct if isinstance(disk_pct, (int, float)) else None,
+    )
+    if isinstance(disk_used, (int, float)) and isinstance(disk_total, (int, float)):
+        disk_main = f"{disk_used:.1f}/{disk_total:.1f} GB"
+    else:
+        disk_main = "-"
+    if isinstance(disk_pct, (int, float)) and isinstance(disk_free, (int, float)):
+        disk_sub = f"{disk_pct:.0f}% used | {disk_free:.1f} GB free"
+    else:
+        disk_sub = "Storage usage unavailable"
+    render_resource_card(
+        "Disk",
+        disk_main,
+        disk_sub,
+        disk_history,
+        color="#DC2626",
+        chart_min=0,
+        chart_max=100,
+    )
+    if not storage_admission.get("allowed", True):
+        st.warning(
+            "Storage protection is active. New submissions and queued-job dispatch are blocked: "
+            f"{storage_admission.get('reason', 'storage status unavailable')}"
+        )
+
     # --- GPU Memory ---
     if gpu_rows:
         gpu = gpu_rows[0]
@@ -2361,7 +2406,7 @@ def sidebar_monitor_fragment() -> None:
     with st.expander("Worker log", expanded=False):
         log_text = tail_text(WORKER_LOG_FILE, max_lines=80) or "No worker log yet."
         log_text = format_worker_log_time(log_text)
-        st.text_area("Log", value=log_text, height=200, disabled=True, label_visibility="collapsed")
+        render_log_viewer(log_text, key="monitor_worker_log", height=200)
 
 
 def render_queue_panel() -> None:
@@ -2515,6 +2560,8 @@ def render_job_detail(
         stop_result = stop_job(job)
         if stop_result == "signaled":
             st.warning(t('Stop signal sent. The queue will advance after stop confirmation.'))
+        elif stop_result == "error":
+            st.error(job.get("status_message") or "Failed to signal the job process group.")
         else:
             st.info(t('This job is not running. Refreshing the view.'))
         st.rerun()
@@ -2866,11 +2913,18 @@ def render_session_config(session: dict) -> None:
         reload_pressed = actions[2].button(t(':material/refresh: Reload session values'), width="stretch")
 
     if save_pressed:
-        updated = dict(session)
-        updated["pyscf_config"] = config
-        save_session(updated)
-        st.success(t('Session PySCF settings saved.'))
-        st.rerun()
+        validation_errors, validation_warnings = split_issues(validate_pyscf_config_for_save(config))
+        if validation_errors:
+            for message in validation_errors:
+                st.error(message)
+        else:
+            for message in validation_warnings:
+                st.warning(message, icon=":material/warning:")
+            updated = dict(session)
+            updated["pyscf_config"] = config
+            save_session(updated)
+            st.success(t('Session PySCF settings saved.'))
+            st.rerun()
     if reset_pressed:
         updated = dict(session)
         updated["pyscf_config"] = default_pyscf_config()
@@ -3330,12 +3384,102 @@ def render_job_submission(session: dict) -> None:
             if existing_result is None:
                 errors.append(t('Select an existing `.csv` file from this session.'))
 
+    validation_warnings: list[str] = []
+    validation_config = {
+        "CALC_TYPE": effective_method,
+        "REFINE_ENERGY_ON": bool(do_refine),
+        "REFINE_CALC_TYPE": str(module_settings["refine_calc_type"]),
+        "SCAN_MF_ON": bool(mf_scan_active),
+        "SCAN_MF_MLIP_CALC_TYPE": (
+            "orbmol+alpb" if mf_scan_active and alpb_solvent != "None" else "orbmol"
+        ),
+        "ALPB_SOLVENT": str(alpb_solvent),
+    }
+    pyscf_validation_config = session.get("pyscf_config", default_pyscf_config())
+    _, solvent_warnings = split_issues(
+        validate_mixed_level_solvation(validation_config, pyscf_validation_config)
+    )
+    validation_warnings.extend(solvent_warnings)
+
+    representative_atoms = None
+    if not errors and preset != "Figure refresh only":
+        try:
+            if mode == "reactant_product":
+                if source_mode == t('Upload new files'):
+                    reactant_atoms = read_structure_bytes_strict(
+                        reactant_file.getvalue(), suffix=".xyz", label="Reactant XYZ"
+                    )
+                    product_atoms = (
+                        read_structure_bytes_strict(
+                            product_file.getvalue(), suffix=".xyz", label="Product XYZ"
+                        )
+                        if product_file is not None
+                        else None
+                    )
+                else:
+                    reactant_source, product_source = sample_case_files(sample_case or "")
+                    reactant_atoms = read_structure_file_strict(reactant_source, label="Reactant XYZ")
+                    product_atoms = (
+                        read_structure_file_strict(product_source, label="Product XYZ")
+                        if product_source is not None
+                        else None
+                    )
+                representative_atoms = reactant_atoms
+                pair_issues = validate_endpoint_pair(reactant_atoms, product_atoms) if product_atoms is not None else []
+                pair_errors, pair_warnings = split_issues(pair_issues)
+                errors.extend(pair_errors)
+                validation_warnings.extend(pair_warnings)
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(reactant_atoms, int(charge), int(mult), label="Reactant")
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+                constraint_scan_indices = (
+                    scan_indices if module_settings["init_path_method"] == "SCAN" else []
+                )
+                scan_errors, scan_warnings = split_issues(
+                    validate_scan_constraints(constraint_scan_indices, fixed_atoms, len(reactant_atoms))
+                )
+                errors.extend(scan_errors)
+                validation_warnings.extend(scan_warnings)
+            elif mode == "single_input":
+                if source_mode == t('Upload new files'):
+                    suffix = Path(input_file.name).suffix or ".xyz"
+                    representative_atoms = read_structure_bytes_strict(
+                        input_file.getvalue(), suffix=suffix, label="Input structure"
+                    )
+                else:
+                    representative_atoms = read_structure_file_strict(existing_input, label="Input structure")
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(representative_atoms, int(charge), int(mult), label="Input structure")
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+                fixed_errors, fixed_warnings = split_issues(
+                    validate_scan_constraints([], fixed_atoms, len(representative_atoms))
+                )
+                errors.extend(fixed_errors)
+                validation_warnings.extend(fixed_warnings)
+
+        except Exception as exc:
+            errors.append(f"Input validation failed: {exc}")
+
     if errors:
         for message in errors:
             st.error(message)
         return
+    for message in validation_warnings:
+        st.warning(message, icon=":material/warning:")
     for message in scan_resolution_notes:
         st.info(message, icon=":material/info:")
+
+    storage_status = storage_admission_status()
+    if not storage_status["allowed"]:
+        st.error(
+            "New job submission is blocked by storage protection: "
+            f"{storage_status['reason']}"
+        )
+        return
 
     job = create_job(session_id=session_id, owner_label=owner_label, workflow=preset)
     job["charge"] = int(charge)
@@ -3685,14 +3829,82 @@ def render_concat_submission(session: dict) -> None:
         if not selected_existing:
             errors.append(t('Select at least one existing file.'))
 
-    if errors:
-        for message in errors:
-            st.error(message)
-        return
+    validation_warnings: list[str] = []
+    validation_config = {
+        "CALC_TYPE": effective_method,
+        "REFINE_ENERGY_ON": bool(do_refine),
+        "REFINE_CALC_TYPE": str(module_settings["refine_calc_type"]),
+        "SCAN_MF_ON": False,
+        "ALPB_SOLVENT": str(alpb_solvent),
+    }
+    pyscf_validation_config = session.get("pyscf_config", default_pyscf_config())
+    _, solvent_warnings = split_issues(
+        validate_mixed_level_solvation(validation_config, pyscf_validation_config)
+    )
+    validation_warnings.extend(solvent_warnings)
+
+    representative_atoms = None
+    if not errors:
+        try:
+            structure_sources = []
+            if source_mode == t('Upload files'):
+                for uploaded in uploaded_files or []:
+                    suffix = Path(uploaded.name).suffix or ".xyz"
+                    structure_sources.append((
+                        uploaded.name,
+                        read_structure_bytes_strict(
+                            uploaded.getvalue(), suffix=suffix, label=f"CAT input '{uploaded.name}'"
+                        ),
+                    ))
+            else:
+                for existing in selected_existing:
+                    structure_sources.append((
+                        existing.name,
+                        read_structure_file_strict(existing, label=f"CAT input '{existing.name}'"),
+                    ))
+
+            for index, (name, atoms) in enumerate(structure_sources):
+                if representative_atoms is None:
+                    representative_atoms = atoms
+                else:
+                    pair_errors, pair_warnings = split_issues(
+                        validate_endpoint_pair(
+                            representative_atoms,
+                            atoms,
+                            left_label="First CAT input",
+                            right_label=f"CAT input '{name}'",
+                        )
+                    )
+                    errors.extend(pair_errors)
+                    validation_warnings.extend(pair_warnings)
+                charge_errors, charge_warnings = split_issues(
+                    validate_charge_spin(atoms, int(charge), int(mult), label=f"CAT input '{name}'")
+                )
+                errors.extend(charge_errors)
+                validation_warnings.extend(charge_warnings)
+
+            if representative_atoms is not None and not errors:
+                fixed_errors, fixed_warnings = split_issues(
+                    validate_scan_constraints([], fixed_atoms, len(representative_atoms))
+                )
+                errors.extend(fixed_errors)
+                validation_warnings.extend(fixed_warnings)
+        except Exception as exc:
+            errors.append(f"Input validation failed: {exc}")
 
     if errors:
         for message in errors:
             st.error(message)
+        return
+    for message in validation_warnings:
+        st.warning(message, icon=":material/warning:")
+
+    storage_status = storage_admission_status()
+    if not storage_status["allowed"]:
+        st.error(
+            "New job submission is blocked by storage protection: "
+            f"{storage_status['reason']}"
+        )
         return
 
     job = create_job(session_id=session_id, owner_label=owner_label, workflow="Concatenation & Batch")
@@ -4006,15 +4218,25 @@ def render_job_results(job: dict) -> None:
         rows = [{"path": str(path.relative_to(run_dir)), "size": file_size_label(path)} for path in files]
         if rows:
             st.dataframe(pd.DataFrame(rows), hide_index=True, height=220)
-            render_molscout_log_expander(files, run_dir)
+            render_molscout_log_expander(
+                files,
+                run_dir,
+                key=f"overview_molscout_log_{job['job_id']}",
+            )
         else:
             st.info("Calculation outputs are not available yet. Job JSON files can be viewed in the Json tab.")
     elif result_view == "Logs":
         log_files = [path for path in files if path.suffix.lower() in LOG_EXTENSIONS]
         if log_files:
             labels = [str(path.relative_to(run_dir)) for path in log_files]
-            selected = log_files[labels.index(st.selectbox("Log file", labels, key=f"log_{job['job_id']}"))]
-            st.code(tail_text(selected, max_lines=280) or "(empty file)", language="text")
+            selected_label = st.selectbox("Log file", labels, key=f"log_{job['job_id']}")
+            selected_index = labels.index(selected_label)
+            selected = log_files[selected_index]
+            render_log_viewer(
+                tail_text(selected, max_lines=500) or "(empty file)",
+                key=f"result_log_{job['job_id']}_{selected_index}",
+                height=360,
+            )
         else:
             st.info(t('No .log files.'))
     elif result_view == "Json":

@@ -264,6 +264,8 @@ def uses_pyscf(config: dict[str, Any]) -> bool:
     primary = str(config.get("CALC_TYPE", "")).lower()
     if primary in {"pyscf", "pyscf_high"}:
         return True
+    if bool(config.get("SCAN_MF_ON", False)):
+        return True
     refine = str(config.get("REFINE_CALC_TYPE", "")).lower()
     return bool(config.get("REFINE_ENERGY_ON", False)) and refine in {"pyscf", "pyscf_high"}
 
