@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import fnmatch
+import hashlib
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
@@ -16,7 +18,9 @@ from app_core.trajectory_viewer import (
     build_chemiscope_dataset,
     build_frame_table,
     finite_column,
+    load_frame_properties_csv,
     load_structures,
+    merge_frame_properties,
     render_passive_chemiscope,
     scan_trajectory_files,
     trajectory_to_extxyz,
@@ -59,6 +63,91 @@ def filter_files_for_jobs(files_df: pd.DataFrame, job_ids: list[str]) -> pd.Data
     return files_df[files_df["rel_path"].astype(str).str.startswith(prefixes)].reset_index(drop=True)
 
 
+def trajectory_job_id(rel_path: str) -> str:
+    parts = Path(str(rel_path)).parts
+    if len(parts) >= 3 and parts[0] == "jobs":
+        return str(parts[1])
+    return ""
+
+
+def trajectory_path_within_job(rel_path: str) -> str:
+    parts = Path(str(rel_path)).parts
+    if len(parts) >= 3 and parts[0] == "jobs":
+        return Path(*parts[2:]).as_posix()
+    return Path(str(rel_path)).as_posix()
+
+
+def trajectory_role(path: Path) -> str:
+    name = path.name
+    if name == "init_path.traj":
+        return "Initial path"
+    if name == "irc.traj":
+        return "IRC"
+    if name == "optpoints.traj":
+        return "Opt points"
+    if name.endswith("_tsopt.traj"):
+        return "TS optimization"
+    if name.endswith("_opt.traj"):
+        return "Optimization"
+    return "Trajectory"
+
+
+def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None:
+    """Return the result CSV paired with an init_path trajectory, when present."""
+    if trajectory_path.name != "init_path.traj":
+        return None
+
+    result_name = Path(str((job or {}).get("result_name") or "result.csv")).name
+    candidates = [trajectory_path.parent / result_name]
+
+    output_dir_text = str((job or {}).get("output_dir") or "").strip()
+    if output_dir_text:
+        candidates.append(Path(output_dir_text) / result_name)
+
+    seen: set[str] = set()
+    for candidate in candidates:
+        candidate_key = str(candidate)
+        if candidate_key in seen:
+            continue
+        seen.add(candidate_key)
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+
+def expected_result_name(job: dict | None) -> str:
+    return Path(str((job or {}).get("result_name") or "result.csv")).name
+
+
+def numeric_columns(df: pd.DataFrame) -> list[str]:
+    columns: list[str] = []
+    for column in df.columns:
+        values = pd.to_numeric(df[column], errors="coerce").to_numpy(dtype=float)
+        if np.isfinite(values).any():
+            columns.append(str(column))
+    return columns
+
+
+def prioritized_plot_columns(columns: list[str]) -> list[str]:
+    priority: list[str] = []
+    priority.extend(column for column in columns if column.startswith("SCAN_"))
+    for preferred in [
+        "Delta E vs. reactant [kcal/mol]",
+        "Heavy-RMSD vs frame 0 [Å]",
+        "Heavy-RMSD vs prev frame [Å]",
+        "relative_energy",
+        "energy",
+        "energy [eV]",
+        "max_force",
+        "mean_force",
+        "step",
+    ]:
+        if preferred in columns and preferred not in priority:
+            priority.append(preferred)
+    priority.extend(column for column in columns if column not in priority)
+    return priority
+
+
 st.set_page_config(page_title="MolScout [Chemiscope]")
 st.markdown("## :material/animation: Chemiscope")
 st.caption(t('Inspect trajectory and XYZ files from the selected session with Chemiscope.'))
@@ -91,6 +180,7 @@ if not selected_job_ids:
 if focused_job_id not in selected_job_ids:
     focused_job_id = selected_job_ids[0]
 
+jobs_by_id = {str(item.get("job_id") or ""): item for item in selected_jobs}
 root = session_dir(session_id)
 st.caption(
     f"Session `{session_id}` / Selected jobs {len(selected_job_ids)} / Target Job `{focused_job_id}`"
@@ -112,7 +202,7 @@ if len(selected_jobs) > 1:
     )
 
 with st.container(border=True):
-    top_cols = st.columns([1, 1, 1])
+    top_cols = st.columns([1, 1, 1, 1])
     include_xyz = top_cols[0].toggle(
         "Include XYZ",
         value=False,
@@ -127,37 +217,17 @@ with st.container(border=True):
         key=f"{session_id}_chemiscope_max_files",
     )
     max_frames = top_cols[2].number_input(
-        "Max frames",
+        "Max frames / file",
         min_value=1,
         max_value=10000,
         value=DEFAULT_MAX_FRAMES,
         step=50,
         key=f"{session_id}_chemiscope_max_frames",
     )
-
-    view_cols = st.columns([1, 1, 1, 1])
-    join_points = view_cols[0].toggle(
-        "Join points",
-        value=True,
-        key=f"{session_id}_chemiscope_join_points",
-    )
-    playback_delay = view_cols[1].slider(
-        "Playback delay ms",
-        min_value=20,
-        max_value=1000,
-        value=100,
-        step=20,
-        key=f"{session_id}_chemiscope_playback_delay",
-    )
-    mode = view_cols[2].segmented_control(
-        "Viewer mode",
-        options=["default", "structure", "map"],
-        default="default",
-        key=f"{session_id}_chemiscope_mode",
-    )
-    if view_cols[3].button(":material/refresh: Refresh scan", width="stretch"):
+    if top_cols[3].button(":material/refresh: Refresh scan", width="stretch"):
         scan_trajectory_files.clear()
         load_structures.clear()
+        load_frame_properties_csv.clear()
         st.rerun()
 
 files_df = scan_trajectory_files(str(root), bool(include_xyz), int(max_files))
@@ -181,108 +251,378 @@ if filtered_files_df.empty:
     st.info(t('No trajectory files match this filter.'))
     st.stop()
 
+prepared_files_df = filtered_files_df.copy()
+prepared_files_df["job_id"] = prepared_files_df["rel_path"].map(trajectory_job_id)
+prepared_files_df["trajectory"] = prepared_files_df["rel_path"].map(trajectory_path_within_job)
+prepared_files_df["role"] = prepared_files_df["path"].map(lambda value: trajectory_role(Path(str(value))))
+prepared_files_df["size"] = prepared_files_df["path"].map(
+    lambda value: file_size_label(Path(str(value)))
+)
+
+property_sources: list[str] = []
+for _, file_row in prepared_files_df.iterrows():
+    trajectory_path = Path(str(file_row["path"]))
+    job_id = str(file_row["job_id"] or "")
+    job = jobs_by_id.get(job_id)
+    result_csv = companion_result_csv(trajectory_path, job)
+    if result_csv is not None:
+        property_sources.append(result_csv.name)
+    elif trajectory_path.name == "init_path.traj":
+        property_sources.append(f"{expected_result_name(job)} (missing)")
+    else:
+        property_sources.append("-")
+prepared_files_df["property_source"] = property_sources
+
 st.markdown("#### Found trajectory files")
 st.caption(tf(
     "Files matching `{filter_name}`: {count:,}",
     filter_name=selected_filter,
-    count=len(filtered_files_df),
+    count=len(prepared_files_df),
 ))
 if include_xyz and selected_filter == "*.traj":
     st.caption(t('XYZ and extxyz files are also shown because Include XYZ is enabled.'))
-display_df = filtered_files_df[["rel_path", "suffix", "size_kb", "modified"]].copy()
-display_df["size"] = filtered_files_df["path"].map(
-    lambda value: file_size_label(Path(str(value)))
+
+selection_signature = hashlib.sha1(
+    "|".join(prepared_files_df["rel_path"].astype(str)).encode("utf-8")
+).hexdigest()[:12]
+trajectory_table_key = (
+    f"{session_id}_chemiscope_trajectory_table_"
+    f"{'-'.join(selected_job_ids)}_{selection_signature}"
 )
-st.dataframe(
-    display_df[["rel_path", "suffix", "size", "modified"]],
+
+if trajectory_table_key not in st.session_state:
+    preferred_rows = prepared_files_df.index[
+        (prepared_files_df["job_id"] == focused_job_id)
+        & prepared_files_df["trajectory"].astype(str).map(lambda value: Path(value).name == "init_path.traj")
+    ].tolist()
+    if not preferred_rows:
+        preferred_rows = prepared_files_df.index[
+            prepared_files_df["job_id"] == focused_job_id
+        ].tolist()
+    default_row = int(preferred_rows[0]) if preferred_rows else 0
+    st.session_state[trajectory_table_key] = {"selection": {"rows": [default_row]}}
+
+selection_event = st.dataframe(
+    prepared_files_df[
+        ["job_id", "trajectory", "role", "size", "modified", "property_source"]
+    ].rename(
+        columns={
+            "job_id": "Job",
+            "trajectory": "Trajectory",
+            "role": "Role",
+            "size": "Size",
+            "modified": "Modified",
+            "property_source": "Property source",
+        }
+    ),
     hide_index=True,
-    height=240,
+    width="stretch",
+    height=min(360, 36 + 35 * len(prepared_files_df)),
+    on_select="rerun",
+    selection_mode="multi-row",
+    key=trajectory_table_key,
+    column_config={
+        "Job": st.column_config.TextColumn("Job", width="medium"),
+        "Trajectory": st.column_config.TextColumn("Trajectory", width="large"),
+        "Role": st.column_config.TextColumn("Role", width="small"),
+        "Size": st.column_config.TextColumn("Size", width="small"),
+        "Modified": st.column_config.TextColumn("Modified", width="medium"),
+        "Property source": st.column_config.TextColumn("Property source", width="medium"),
+    },
 )
+selected_indices = [
+    index
+    for index in selection_event.selection.rows
+    if isinstance(index, int) and 0 <= index < len(prepared_files_df)
+]
+if not selected_indices:
+    st.info("Select one or more trajectory rows to visualize.")
+    st.stop()
 
-file_key = f"{session_id}_chemiscope_file_{'-'.join(selected_job_ids)}"
-file_options = filtered_files_df["rel_path"].tolist()
-if st.session_state.get(file_key) not in file_options:
-    st.session_state[file_key] = file_options[0]
-selected_rel = st.selectbox(
-    "Trajectory file",
-    options=file_options,
-    key=file_key,
-)
-selected_row = filtered_files_df.loc[filtered_files_df["rel_path"] == selected_rel].iloc[0]
-selected_path = Path(str(selected_row["path"]))
+selected_file_rows = prepared_files_df.iloc[selected_indices].reset_index(drop=True)
+st.caption(f"Selected trajectories: {len(selected_file_rows):,}")
 
-try:
-    structures = load_structures(
-        str(selected_path),
-        int(selected_row["mtime_ns"]),
-        int(selected_row["size_bytes"]),
-        int(max_frames),
+selection_kind = "single" if len(selected_file_rows) == 1 else "multi"
+join_points_key = f"{session_id}_chemiscope_join_points"
+join_context_key = f"{session_id}_chemiscope_join_points_context"
+if st.session_state.get(join_context_key) != selection_kind:
+    st.session_state[join_points_key] = selection_kind == "single"
+    st.session_state[join_context_key] = selection_kind
+
+with st.container(border=True):
+    view_cols = st.columns([1, 1, 1])
+    join_points = view_cols[0].toggle(
+        "Join points",
+        key=join_points_key,
+        help=(
+            "For multiple trajectories this is disabled by default. Enabling it "
+            "connects points in dataset order, including the boundary between sources."
+        ),
     )
-except ImportError as error:
-    render_dependency_hint(error)
-    st.stop()
-except Exception as error:
-    st.error(f"Failed to read {selected_path.name}")
-    st.exception(error)
-    st.stop()
+    playback_delay = view_cols[1].slider(
+        "Playback delay ms",
+        min_value=20,
+        max_value=1000,
+        value=100,
+        step=20,
+        key=f"{session_id}_chemiscope_playback_delay",
+    )
+    mode = view_cols[2].segmented_control(
+        "Viewer mode",
+        options=["default", "structure", "map"],
+        default="default",
+        key=f"{session_id}_chemiscope_mode",
+    )
+    if len(selected_file_rows) > 1 and join_points:
+        st.caption(
+            "Join points is enabled for a combined dataset; the last frame of one "
+            "trajectory will also connect to the first frame of the next trajectory."
+        )
 
-if not structures:
-    st.warning(t('No structures could be read from the selected file.'))
-    st.stop()
+all_structures: list = []
+frame_tables: list[pd.DataFrame] = []
+source_starts: list[int] = []
+loaded_trajectories: list[dict] = []
+csv_fields: set[str] = set()
+property_messages: list[str] = []
 
-frame_table = build_frame_table(structures)
+offset = 0
+for _, selected_row in selected_file_rows.iterrows():
+    selected_path = Path(str(selected_row["path"]))
+    rel_path = str(selected_row["rel_path"])
+    job_id = str(selected_row["job_id"] or "")
+    job = jobs_by_id.get(job_id)
 
-metric_cols = st.columns(4)
+    try:
+        structures = load_structures(
+            str(selected_path),
+            int(selected_row["mtime_ns"]),
+            int(selected_row["size_bytes"]),
+            int(max_frames),
+        )
+    except ImportError as error:
+        render_dependency_hint(error)
+        st.stop()
+    except Exception as error:
+        st.error(f"Failed to read {rel_path}")
+        st.exception(error)
+        st.stop()
+
+    if not structures:
+        st.warning(f"No structures could be read from {rel_path}.")
+        st.stop()
+
+    local_table = build_frame_table(structures)
+    result_csv = companion_result_csv(selected_path, job)
+    property_source = "-"
+    if result_csv is not None:
+        try:
+            csv_stat = result_csv.stat()
+            result_df = load_frame_properties_csv(
+                str(result_csv),
+                int(csv_stat.st_mtime_ns),
+                int(csv_stat.st_size),
+            )
+            local_table, added_columns = merge_frame_properties(local_table, result_df)
+            csv_fields.update(added_columns)
+            property_source = result_csv.name
+        except Exception as error:
+            property_source = f"{result_csv.name} (error)"
+            property_messages.append(
+                f"`{job_id}/{selected_path.name}`: failed to load `{result_csv.name}` ({error})"
+            )
+    elif selected_path.name == "init_path.traj":
+        missing_name = expected_result_name(job)
+        property_source = f"{missing_name} (missing)"
+        property_messages.append(
+            f"`{job_id}/{selected_path.name}`: `{missing_name}` was not found; "
+            "trajectory metadata is still available."
+        )
+
+    inside_job = trajectory_path_within_job(rel_path)
+    source_label = f"{job_id}/{inside_job}" if job_id else rel_path
+    local_table["dataset_index"] = np.arange(offset, offset + len(local_table), dtype=int)
+    local_table["job"] = job_id or "-"
+    local_table["trajectory"] = selected_path.name
+    local_table["source"] = source_label
+    local_table["property_source"] = property_source
+
+    metadata_columns = [
+        "dataset_index",
+        "job",
+        "trajectory",
+        "source",
+        "step",
+        "property_source",
+    ]
+    remaining_columns = [
+        column for column in local_table.columns if column not in metadata_columns
+    ]
+    local_table = local_table[[*metadata_columns, *remaining_columns]]
+
+    source_starts.append(offset)
+    all_structures.extend(structures)
+    frame_tables.append(local_table)
+    loaded_trajectories.append(
+        {
+            "job_id": job_id,
+            "path": selected_path,
+            "rel_path": rel_path,
+            "mtime_ns": int(selected_row["mtime_ns"]),
+            "size_bytes": int(selected_row["size_bytes"]),
+            "frames": len(structures),
+            "property_source": property_source,
+        }
+    )
+    offset += len(structures)
+
+frame_table = pd.concat(frame_tables, ignore_index=True, sort=False)
+structures = all_structures
+
+if property_messages:
+    with st.expander("Property source warnings", expanded=False):
+        for message in property_messages:
+            st.warning(message)
+
+metric_cols = st.columns(5)
 metric_cols[0].metric("Frames loaded", f"{len(structures):,}")
-metric_cols[1].metric("Atoms", f"{int(frame_table['natoms'].iloc[0]):,}")
-metric_cols[2].metric("Formula", str(frame_table["formula"].iloc[0]))
-if finite_column(frame_table, "relative_energy"):
-    span = frame_table["relative_energy"].max() - frame_table["relative_energy"].min()
-    metric_cols[3].metric("Energy span", f"{span:.3f} eV")
+metric_cols[1].metric("Trajectories", f"{len(loaded_trajectories):,}")
+
+natoms_values = pd.to_numeric(frame_table["natoms"], errors="coerce").dropna().unique()
+if len(natoms_values) == 1:
+    metric_cols[2].metric("Atoms", f"{int(natoms_values[0]):,}")
 else:
-    metric_cols[3].metric("Energy span", "n/a")
+    metric_cols[2].metric("Atoms", "mixed")
+
+formula_values = frame_table["formula"].dropna().astype(str).unique().tolist()
+if len(formula_values) == 1:
+    formula_label = formula_values[0]
+elif formula_values:
+    formula_label = f"{len(formula_values)} formulas"
+else:
+    formula_label = "n/a"
+metric_cols[3].metric("Formula", formula_label)
+
+if finite_column(frame_table, "relative_energy"):
+    relative = pd.to_numeric(frame_table["relative_energy"], errors="coerce")
+    span = relative.max() - relative.min()
+    metric_cols[4].metric("Energy span", f"{span:.3f} eV")
+else:
+    metric_cols[4].metric("Energy span", "n/a")
+
+if csv_fields:
+    st.caption(
+        f"CSV fields merged: {len(csv_fields):,} / "
+        + ", ".join(sorted(csv_fields))
+    )
+else:
+    st.caption("CSV fields merged: 0")
 
 left, right = st.columns([1, 2])
 with left:
     st.markdown("#### Frame properties")
-    st.dataframe(frame_table, hide_index=True, height=360)
+    st.dataframe(frame_table, hide_index=True, height=420, width="stretch")
 with right:
     st.markdown("#### Quick plot")
-    plot_cols = [
-        column
-        for column in ["relative_energy", "energy", "max_force", "mean_force"]
-        if finite_column(frame_table, column)
-    ]
-    if plot_cols:
-        plot_col = st.selectbox("Y axis", options=plot_cols, key=f"{session_id}_chemiscope_y_axis")
-        st.line_chart(frame_table, x="step", y=plot_col, height=320)
+    available_numeric = numeric_columns(frame_table)
+    plot_columns = prioritized_plot_columns(available_numeric)
+    x_options = [column for column in plot_columns if column not in {"dataset_index", "natoms"}]
+    y_options = [column for column in plot_columns if column not in {"dataset_index", "natoms", "step"}]
+
+    if x_options and y_options:
+        default_x = next((column for column in x_options if column.startswith("SCAN_")), "step")
+        if default_x not in x_options:
+            default_x = x_options[0]
+        default_y = next(
+            (
+                column
+                for column in [
+                    "Delta E vs. reactant [kcal/mol]",
+                    "relative_energy",
+                    "energy",
+                    "energy [eV]",
+                ]
+                if column in y_options
+            ),
+            y_options[0],
+        )
+
+        x_key = f"{session_id}_chemiscope_x_axis"
+        y_key = f"{session_id}_chemiscope_y_axis"
+        if st.session_state.get(x_key) not in x_options:
+            st.session_state[x_key] = default_x
+        if st.session_state.get(y_key) not in y_options:
+            st.session_state[y_key] = default_y
+
+        axis_cols = st.columns(2)
+        plot_x = axis_cols[0].selectbox("X axis", options=x_options, key=x_key)
+        plot_y = axis_cols[1].selectbox("Y axis", options=y_options, key=y_key)
+
+        plot_df = frame_table[[plot_x, plot_y, "source"]].copy()
+        plot_df[plot_x] = pd.to_numeric(plot_df[plot_x], errors="coerce")
+        plot_df[plot_y] = pd.to_numeric(plot_df[plot_y], errors="coerce")
+        plot_df = plot_df.replace([np.inf, -np.inf], np.nan).dropna(
+            subset=[plot_x, plot_y]
+        )
+        if plot_df.empty:
+            st.info("No finite values are available for the selected axes.")
+        elif len(loaded_trajectories) > 1:
+            pivot = plot_df.pivot_table(
+                index=plot_x,
+                columns="source",
+                values=plot_y,
+                aggfunc="first",
+            ).sort_index()
+            st.line_chart(pivot, height=320)
+        else:
+            st.line_chart(plot_df.sort_values(plot_x), x=plot_x, y=plot_y, height=320)
     else:
         st.info(t('No numeric energy or force properties were found in Atoms.info or arrays.'))
 
 st.markdown("#### Structure viewer")
+if len(source_starts) > 9:
+    st.caption(
+        "Chemiscope can pin up to 9 structures initially. The first frame of the "
+        "first 9 selected trajectories will be opened in parallel viewers; all "
+        "selected frames remain in the dataset."
+    )
+
 try:
     import chemiscope.streamlit
 
+    source_name = (
+        Path(str(loaded_trajectories[0]["path"])).name
+        if len(loaded_trajectories) == 1
+        else f"{len(loaded_trajectories)} selected trajectories"
+    )
     dataset, settings = build_chemiscope_dataset(
         structures=structures,
         frame_table=frame_table,
-        source_name=selected_path.name,
+        source_name=source_name,
         join_points=bool(join_points),
         playback_delay=int(playback_delay),
+        pinned_indices=source_starts,
     )
     with st.expander("Chemiscope settings", expanded=False):
         st.json(settings)
 
     viewer_mode = str(mode or "default")
+    viewer_identity_parts = [
+        (
+            f"{item['rel_path']}:{item['mtime_ns']}:{item['size_bytes']}:"
+            f"{item['property_source']}"
+        )
+        for item in loaded_trajectories
+    ]
     viewer_identity = (
-        f"{selected_path}|join={int(bool(join_points))}"
-        f"|delay={int(playback_delay)}"
+        "|".join(viewer_identity_parts)
+        + f"|join={int(bool(join_points))}|delay={int(playback_delay)}"
     )
     component_key = viewer_key(
         viewer_identity,
         len(structures),
         viewer_mode,
-        int(selected_row["mtime_ns"]),
+        max(int(item["mtime_ns"]) for item in loaded_trajectories),
     )
 
     @st.fragment
@@ -302,30 +642,44 @@ try:
 except ImportError as error:
     render_dependency_hint(error)
 except Exception as error:
-    st.error("Chemiscope failed to render this trajectory.")
+    st.error("Chemiscope failed to render the selected trajectories.")
     st.exception(error)
 
-if selected_path.suffix.lower() == ".traj":
+traj_downloads = [
+    item for item in loaded_trajectories if Path(str(item["path"])).suffix.lower() == ".traj"
+]
+if traj_downloads:
     st.markdown(t('#### Download trajectory'))
-    try:
-        extxyz_data = trajectory_to_extxyz(
-            str(selected_path),
-            int(selected_row["mtime_ns"]),
-            int(selected_row["size_bytes"]),
-        )
-        if extxyz_data:
-            st.download_button(
-                t('Download selected trajectory as extxyz'),
-                data=extxyz_data,
-                file_name=f"{selected_path.name}.xyz",
-                mime="chemical/x-xyz",
-                width="stretch",
+    for item in traj_downloads:
+        selected_path = Path(str(item["path"]))
+        try:
+            extxyz_data = trajectory_to_extxyz(
+                str(selected_path),
+                int(item["mtime_ns"]),
+                int(item["size_bytes"]),
             )
-        else:
-            st.warning(t('The selected trajectory contains no frames that can be exported.'))
-    except ImportError as error:
-        render_dependency_hint(error)
-    except Exception as error:
-        st.error(t('Failed to convert the trajectory to extxyz.'))
-        st.exception(error)
-
+            if extxyz_data:
+                job_id = str(item.get("job_id") or "")
+                label = (
+                    t('Download selected trajectory as extxyz')
+                    if len(traj_downloads) == 1
+                    else f"Download {job_id}/{selected_path.name} as extxyz"
+                )
+                file_prefix = f"{job_id}_" if len(traj_downloads) > 1 and job_id else ""
+                button_digest = hashlib.sha1(str(item["rel_path"]).encode("utf-8")).hexdigest()[:12]
+                st.download_button(
+                    label,
+                    data=extxyz_data,
+                    file_name=f"{file_prefix}{selected_path.name}.xyz",
+                    mime="chemical/x-xyz",
+                    width="stretch",
+                    key=f"chemiscope_extxyz_{button_digest}",
+                )
+            else:
+                st.warning(f"{item['rel_path']} contains no frames that can be exported.")
+        except ImportError as error:
+            render_dependency_hint(error)
+            break
+        except Exception as error:
+            st.error(f"Failed to convert {item['rel_path']} to extxyz.")
+            st.exception(error)

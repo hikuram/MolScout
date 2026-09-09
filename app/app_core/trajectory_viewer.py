@@ -179,6 +179,67 @@ def load_structures(path_text: str, mtime_ns: int, size_bytes: int, max_frames: 
 
 
 @st.cache_data(show_spinner=False)
+def load_frame_properties_csv(path_text: str, mtime_ns: int, size_bytes: int) -> pd.DataFrame:
+    """Load a frame-aligned CSV used to enrich Chemiscope structure properties.
+
+    ``mtime_ns`` and ``size_bytes`` are cache-busting inputs supplied by the
+    caller. They intentionally do not participate in the CSV parsing itself.
+    """
+    del mtime_ns, size_bytes
+    return pd.read_csv(path_text)
+
+
+def merge_frame_properties(
+    frame_table: pd.DataFrame,
+    properties_df: pd.DataFrame,
+    *,
+    image_column: str = "# image",
+) -> tuple[pd.DataFrame, list[str]]:
+    """Merge a result CSV into a frame table using the local frame index.
+
+    The CSV join is deliberately key-based rather than row-position based.
+    This keeps truncated previews (``Max frames / file``) aligned and avoids
+    silently shifting properties when a CSV contains extra rows.
+    """
+    if image_column not in properties_df.columns:
+        raise ValueError(f"CSV is missing the frame key column: {image_column}")
+
+    source = properties_df.copy()
+    image_values = pd.to_numeric(source[image_column], errors="coerce")
+    valid = np.isfinite(image_values.to_numpy(dtype=float))
+    source = source.loc[valid].copy()
+    source[image_column] = image_values.loc[valid].astype(int)
+    source = source.drop_duplicates(subset=[image_column], keep="last")
+    source = source.rename(columns={image_column: "step"})
+
+    rename_map: dict[str, str] = {}
+    occupied = set(frame_table.columns) | {"step"}
+    for column in source.columns:
+        if column == "step":
+            continue
+        candidate = str(column)
+        if candidate in occupied:
+            candidate = f"CSV: {candidate}"
+            suffix = 2
+            while candidate in occupied:
+                candidate = f"CSV: {column} ({suffix})"
+                suffix += 1
+        rename_map[column] = candidate
+        occupied.add(candidate)
+
+    source = source.rename(columns=rename_map)
+    added_columns = [rename_map[column] for column in rename_map]
+    keep_columns = ["step", *added_columns]
+    merged = frame_table.merge(
+        source[keep_columns],
+        how="left",
+        on="step",
+        validate="one_to_one",
+    )
+    return merged, added_columns
+
+
+@st.cache_data(show_spinner=False)
 def trajectory_to_extxyz(path_text: str, mtime_ns: int, size_bytes: int) -> bytes:
     """Convert every frame in a trajectory file to extended XYZ bytes."""
     import ase.io
@@ -293,75 +354,163 @@ def build_chemiscope_dataset(
     source_name: str,
     join_points: bool,
     playback_delay: int,
+    *,
+    pinned_indices: list[int] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Build a Chemiscope dataset from one or more concatenated trajectories.
+
+    Any frame-table column that is complete across every loaded structure is
+    exported as a structure property. Numeric columns must contain only finite
+    values; incomplete CSV-derived fields remain visible in the Streamlit table
+    but are intentionally omitted from Chemiscope.
+    """
     import chemiscope
 
     n_frames = len(structures)
-    properties: dict[str, Any] = {
-        "step": {
-            "target": "structure",
-            "values": frame_table["step"].astype(int).tolist(),
-            "description": "Frame index in the selected trajectory file.",
-        },
-        "source": {
-            "target": "structure",
-            "values": [source_name] * n_frames,
-            "description": "Source trajectory file name.",
-        },
-        "natoms": {
-            "target": "structure",
-            "values": frame_table["natoms"].astype(int).tolist(),
-        },
+    if len(frame_table) != n_frames:
+        raise ValueError(
+            f"Frame table length ({len(frame_table)}) does not match structures ({n_frames})."
+        )
+
+    properties: dict[str, Any] = {}
+    numeric_properties: set[str] = set()
+    text_properties: set[str] = set()
+
+    builtin_units = {
+        "energy": "eV",
+        "relative_energy": "eV",
+        "max_force": "eV/Ang",
+        "mean_force": "eV/Ang",
+    }
+    descriptions = {
+        "step": "Frame index within the source trajectory.",
+        "dataset_index": "Frame index after concatenating the selected trajectories.",
+        "source": "Unique source trajectory identifier.",
+        "trajectory": "Source trajectory file name.",
+        "job": "MolScout job identifier.",
+        "property_source": "CSV file used to enrich this trajectory, when available.",
     }
 
-    chemiscope_numeric: set[str] = set()
-    for column, units in [
-        ("energy", "eV"),
-        ("relative_energy", "eV"),
-        ("max_force", "eV/Ang"),
-        ("mean_force", "eV/Ang"),
-    ]:
-        if column not in frame_table:
+    internal_columns = {"formula"}
+    for column in frame_table.columns:
+        if column in internal_columns:
             continue
-        values = pd.to_numeric(
-            frame_table[column], errors="coerce"
-        ).to_numpy(dtype=float)
-        # Chemiscope properties are serialized as strict JSON number arrays.
-        # Keep partial/missing data in the Streamlit frame table, but do not
-        # send NaN/Inf values to the Chemiscope component.
-        if len(values) != n_frames or not np.isfinite(values).all():
-            continue
-        properties[column] = {
-            "target": "structure",
-            "values": values.tolist(),
-            "units": units,
-        }
-        chemiscope_numeric.add(column)
 
-    if "relative_energy" in chemiscope_numeric:
-        y_prop = "relative_energy"
-        color_prop = "relative_energy"
-    elif "energy" in chemiscope_numeric:
-        y_prop = "energy"
-        color_prop = "energy"
-    elif "max_force" in chemiscope_numeric:
-        y_prop = "max_force"
-        color_prop = "max_force"
+        series = frame_table[column]
+        if len(series) != n_frames:
+            continue
+
+        numeric = pd.to_numeric(series, errors="coerce")
+        numeric_values = numeric.to_numpy(dtype=float)
+        original_non_null = series.notna().all()
+
+        # Treat a column as numeric only when every original value is present
+        # and every converted value is finite. This prevents strings such as
+        # job IDs from being accidentally coerced into a partial number array.
+        if original_non_null and np.isfinite(numeric_values).all():
+            values: list[Any]
+            if pd.api.types.is_integer_dtype(series.dtype):
+                values = numeric.astype(int).tolist()
+            else:
+                values = numeric_values.tolist()
+            prop: dict[str, Any] = {
+                "target": "structure",
+                "values": values,
+            }
+            if column in builtin_units:
+                prop["units"] = builtin_units[column]
+            if column in descriptions:
+                prop["description"] = descriptions[column]
+            properties[str(column)] = prop
+            numeric_properties.add(str(column))
+            continue
+
+        if not original_non_null:
+            continue
+
+        text_values = [str(value) for value in series.tolist()]
+        if any(value == "" for value in text_values):
+            continue
+        prop = {
+            "target": "structure",
+            "values": text_values,
+        }
+        if column in descriptions:
+            prop["description"] = descriptions[column]
+        properties[str(column)] = prop
+        text_properties.add(str(column))
+
+    if "step" not in properties:
+        properties["step"] = {
+            "target": "structure",
+            "values": list(range(n_frames)),
+            "description": descriptions["step"],
+        }
+        numeric_properties.add("step")
+
+    if "source" not in properties:
+        properties["source"] = {
+            "target": "structure",
+            "values": [source_name] * n_frames,
+            "description": descriptions["source"],
+        }
+        text_properties.add("source")
+
+    scan_properties = [
+        column for column in frame_table.columns
+        if str(column).startswith("SCAN_") and str(column) in numeric_properties
+    ]
+    delta_energy_name = "Delta E vs. reactant [kcal/mol]"
+
+    if scan_properties:
+        x_prop = str(scan_properties[0])
     else:
-        y_prop = "step"
-        color_prop = "source"
+        x_prop = "step"
+
+    y_candidates = [
+        delta_energy_name,
+        "relative_energy",
+        "energy",
+        "max_force",
+        "mean_force",
+    ]
+    y_prop = next(
+        (candidate for candidate in y_candidates if candidate in numeric_properties),
+        "step",
+    )
+    color_prop = y_prop if y_prop in numeric_properties else "source"
+
+    job_count = (
+        frame_table["job"].astype(str).nunique()
+        if "job" in frame_table.columns and "job" in text_properties
+        else 0
+    )
+    if job_count > 1:
+        symbol_prop = "job"
+    elif "source" in text_properties:
+        symbol_prop = "source"
+    elif "job" in text_properties:
+        symbol_prop = "job"
+    else:
+        symbol_prop = None
 
     settings = chemiscope.quick_settings(
-        x="step",
+        x=x_prop,
         y=y_prop,
         map_color=color_prop,
-        symbol="source",
+        symbol=symbol_prop,
         trajectory=join_points,
         structure_settings={
             "keepOrientation": True,
             "playbackDelay": int(playback_delay),
         },
     )
+    if pinned_indices:
+        settings["pinned"] = [
+            int(index) for index in pinned_indices[:9]
+            if isinstance(index, (int, np.integer)) and 0 <= int(index) < n_frames
+        ]
+
     dataset = chemiscope.create_input(
         structures=structures,
         properties=properties,
