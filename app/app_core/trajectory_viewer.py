@@ -314,26 +314,37 @@ def build_chemiscope_dataset(
         },
     }
 
+    chemiscope_numeric: set[str] = set()
     for column, units in [
         ("energy", "eV"),
         ("relative_energy", "eV"),
         ("max_force", "eV/Ang"),
         ("mean_force", "eV/Ang"),
     ]:
-        if column in frame_table and finite_column(frame_table, column):
-            properties[column] = {
-                "target": "structure",
-                "values": [math.nan if pd.isna(value) else float(value) for value in frame_table[column].tolist()],
-                "units": units,
-            }
+        if column not in frame_table:
+            continue
+        values = pd.to_numeric(
+            frame_table[column], errors="coerce"
+        ).to_numpy(dtype=float)
+        # Chemiscope properties are serialized as strict JSON number arrays.
+        # Keep partial/missing data in the Streamlit frame table, but do not
+        # send NaN/Inf values to the Chemiscope component.
+        if len(values) != n_frames or not np.isfinite(values).all():
+            continue
+        properties[column] = {
+            "target": "structure",
+            "values": values.tolist(),
+            "units": units,
+        }
+        chemiscope_numeric.add(column)
 
-    if finite_column(frame_table, "relative_energy"):
+    if "relative_energy" in chemiscope_numeric:
         y_prop = "relative_energy"
         color_prop = "relative_energy"
-    elif finite_column(frame_table, "energy"):
+    elif "energy" in chemiscope_numeric:
         y_prop = "energy"
         color_prop = "energy"
-    elif finite_column(frame_table, "max_force"):
+    elif "max_force" in chemiscope_numeric:
         y_prop = "max_force"
         color_prop = "max_force"
     else:
