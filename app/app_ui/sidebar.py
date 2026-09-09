@@ -717,6 +717,9 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
                     for item in jobs
                 }
                 target_options = selected_job_ids if multi_enabled else job_ids
+                if multi_enabled:
+                    _render_selected_jobs_archive(selected_session_id, jobs, selected_job_ids)
+
                 if target_options:
                     focused_job_id = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
                     if focused_job_id not in target_options:
@@ -740,9 +743,6 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
                         (item for item in jobs if str(item["job_id"]) == selected_job_id),
                         None,
                     )
-
-                    if multi_enabled:
-                        _render_selected_jobs_archive(selected_session_id, jobs, selected_job_ids)
 
                     if selected_job:
                         st.markdown("**Target Summary**")
@@ -778,6 +778,8 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
                         if selected_steps:
                             st.caption("Steps: " + ", ".join(selected_steps))
 
+                        st.caption(f"Job Note: {selected_job.get('notes') or '-'}")
+
                         with st.expander("Run Settings", expanded=False):
                             st.caption(
                                 f"Temperature: {selected_job.get('temperature', 298.15):.2f} K"
@@ -801,8 +803,6 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
                                 f"Save figures: {overrides.get('SAVE_FIG_ON', True)} | "
                                 f"Initial path: {overrides.get('INIT_PATH_METHOD', 'DMF')}"
                             )
-                            if selected_job.get("notes"):
-                                st.caption(f"Notes: {selected_job.get('notes')}")
 
                         if selected_job.get("completion_reason") or selected_job.get("status_message"):
                             st.caption(
