@@ -93,16 +93,39 @@ def trajectory_role(path: Path) -> str:
 
 
 def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None:
-    """Return the result CSV paired with an init_path trajectory, when present."""
+    """Return the result CSV paired with an init_path trajectory, when present.
+
+    MolScout artifact organization places CSV files under ``Tables/`` in normal
+    completed jobs, while older/imported jobs can still keep ``result.csv`` next
+    to the trajectory. Check both layouts and then fall back to a bounded recursive
+    search under the recorded output directory.
+    """
     if trajectory_path.name != "init_path.traj":
         return None
 
     result_name = Path(str((job or {}).get("result_name") or "result.csv")).name
-    candidates = [trajectory_path.parent / result_name]
+    candidates = [
+        trajectory_path.parent / result_name,
+        trajectory_path.parent / "Tables" / result_name,
+    ]
 
     output_dir_text = str((job or {}).get("output_dir") or "").strip()
-    if output_dir_text:
-        candidates.append(Path(output_dir_text) / result_name)
+    output_dir = Path(output_dir_text) if output_dir_text else None
+    if output_dir is not None:
+        candidates.extend(
+            [
+                output_dir / result_name,
+                output_dir / "Tables" / result_name,
+            ]
+        )
+        try:
+            relative_parent = trajectory_path.parent.relative_to(output_dir)
+        except ValueError:
+            relative_parent = None
+        if relative_parent is not None:
+            candidates.append(output_dir / "Tables" / relative_parent / result_name)
+        if output_dir.exists():
+            candidates.extend(sorted(output_dir.rglob(result_name)))
 
     seen: set[str] = set()
     for candidate in candidates:
@@ -113,6 +136,22 @@ def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None
         if candidate.exists() and candidate.is_file():
             return candidate
     return None
+
+
+def property_source_label(
+    result_csv: Path, trajectory_path: Path, job: dict | None = None
+) -> str:
+    """Return a compact path label for the CSV property source."""
+    output_dir_text = str((job or {}).get("output_dir") or "").strip()
+    if output_dir_text:
+        try:
+            return result_csv.relative_to(Path(output_dir_text)).as_posix()
+        except ValueError:
+            pass
+    try:
+        return result_csv.relative_to(trajectory_path.parent).as_posix()
+    except ValueError:
+        return result_csv.name
 
 
 def expected_result_name(job: dict | None) -> str:
@@ -266,7 +305,7 @@ for _, file_row in prepared_files_df.iterrows():
     job = jobs_by_id.get(job_id)
     result_csv = companion_result_csv(trajectory_path, job)
     if result_csv is not None:
-        property_sources.append(result_csv.name)
+        property_sources.append(property_source_label(result_csv, trajectory_path, job))
     elif trajectory_path.name == "init_path.traj":
         property_sources.append(f"{expected_result_name(job)} (missing)")
     else:
@@ -425,7 +464,7 @@ for _, selected_row in selected_file_rows.iterrows():
             )
             local_table, added_columns = merge_frame_properties(local_table, result_df)
             csv_fields.update(added_columns)
-            property_source = result_csv.name
+            property_source = property_source_label(result_csv, selected_path, job)
         except Exception as error:
             property_source = f"{result_csv.name} (error)"
             property_messages.append(
@@ -558,24 +597,36 @@ with right:
         plot_x = axis_cols[0].selectbox("X axis", options=x_options, key=x_key)
         plot_y = axis_cols[1].selectbox("Y axis", options=y_options, key=y_key)
 
-        plot_df = frame_table[[plot_x, plot_y, "source"]].copy()
-        plot_df[plot_x] = pd.to_numeric(plot_df[plot_x], errors="coerce")
-        plot_df[plot_y] = pd.to_numeric(plot_df[plot_y], errors="coerce")
+        # Build the plotting frame from independent Series. If X and Y use the
+        # same source property, selecting columns by label first would create
+        # duplicate column names and ``plot_df[plot_x]`` would become a 2-D
+        # DataFrame, which ``pd.to_numeric`` cannot accept.
+        plot_df = pd.DataFrame(
+            {
+                "__plot_x": pd.to_numeric(frame_table[plot_x], errors="coerce"),
+                "__plot_y": pd.to_numeric(frame_table[plot_y], errors="coerce"),
+                "source": frame_table["source"].astype(str),
+            }
+        )
         plot_df = plot_df.replace([np.inf, -np.inf], np.nan).dropna(
-            subset=[plot_x, plot_y]
+            subset=["__plot_x", "__plot_y"]
         )
         if plot_df.empty:
             st.info("No finite values are available for the selected axes.")
         elif len(loaded_trajectories) > 1:
             pivot = plot_df.pivot_table(
-                index=plot_x,
+                index="__plot_x",
                 columns="source",
-                values=plot_y,
+                values="__plot_y",
                 aggfunc="first",
             ).sort_index()
+            pivot.index.name = str(plot_x)
             st.line_chart(pivot, height=320)
         else:
-            st.line_chart(plot_df.sort_values(plot_x), x=plot_x, y=plot_y, height=320)
+            single_plot = plot_df.sort_values("__plot_x").rename(
+                columns={"__plot_x": str(plot_x), "__plot_y": str(plot_y)}
+            )
+            st.line_chart(single_plot, x=str(plot_x), y=str(plot_y), height=320)
     else:
         st.info(t('No numeric energy or force properties were found in Atoms.info or arrays.'))
 
