@@ -32,6 +32,46 @@ FORCE_KEYS = (
 DEFAULT_MAX_FRAMES = 400
 
 
+_PASSIVE_CHEMISCOPE_COMPONENT = None
+
+
+def render_passive_chemiscope(
+    dataset: dict[str, Any],
+    *,
+    mode: str,
+    key: str,
+    width: str | int = "stretch",
+    height: int = 720,
+) -> None:
+    """Render Chemiscope without echoing selection state back from Python."""
+    global _PASSIVE_CHEMISCOPE_COMPONENT
+
+    if _PASSIVE_CHEMISCOPE_COMPONENT is None:
+        import chemiscope.streamlit
+        import streamlit.components.v1 as components
+
+        component_dir = Path(chemiscope.streamlit.__file__).resolve().parent
+        _PASSIVE_CHEMISCOPE_COMPONENT = components.declare_component(
+            "molscout_chemiscope_viewer",
+            path=str(component_dir),
+        )
+
+    if mode not in ("default", "structure", "map"):
+        raise ValueError(
+            f"Invalid mode '{mode}', expected 'default', 'structure', or 'map'"
+        )
+
+    _PASSIVE_CHEMISCOPE_COMPONENT(
+        dataset=dataset,
+        mode=mode,
+        key=key,
+        width=width,
+        height=height,
+        no_info_panel=False,
+        default=None,
+    )
+
+
 def safe_resolve(path_text: str) -> Path | None:
     try:
         return Path(path_text).expanduser().resolve()

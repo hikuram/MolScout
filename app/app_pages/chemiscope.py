@@ -17,6 +17,7 @@ from app_core.trajectory_viewer import (
     build_frame_table,
     finite_column,
     load_structures,
+    render_passive_chemiscope,
     scan_trajectory_files,
     trajectory_to_extxyz,
     viewer_key,
@@ -273,33 +274,29 @@ try:
         st.json(settings)
 
     viewer_mode = str(mode or "default")
+    viewer_identity = (
+        f"{selected_path}|join={int(bool(join_points))}"
+        f"|delay={int(playback_delay)}"
+    )
     component_key = viewer_key(
-        str(selected_path),
+        viewer_identity,
         len(structures),
         viewer_mode,
         int(selected_row["mtime_ns"]),
     )
-    settings_sync_key = f"{component_key}_molscout_settings"
-    settings_pending_key = f"{settings_sync_key}_pending"
-    molscout_settings_state = (bool(join_points), int(playback_delay))
-    if st.session_state.get(settings_sync_key) != molscout_settings_state:
-        st.session_state[settings_sync_key] = molscout_settings_state
-        st.session_state[settings_pending_key] = True
 
     @st.fragment
     def render_chemiscope():
-        # Re-apply MolScout-controlled settings only when they change. Passing
-        # them on every fragment rerun would overwrite Chemiscope-side state.
-        viewer_settings = settings if st.session_state.get(settings_pending_key, False) else None
-        chemiscope.streamlit.viewer(
+        # Keep animation state inside Chemiscope. The official Streamlit wrapper
+        # echoes the active structure index back to Python and can re-apply a
+        # stale index on the next rerun while an animation is still advancing.
+        render_passive_chemiscope(
             dataset,
-            settings=viewer_settings,
             mode=viewer_mode,
             key=component_key,
             width="stretch",
             height=720,
         )
-        st.session_state[settings_pending_key] = False
 
     render_chemiscope()
 except ImportError as error:
