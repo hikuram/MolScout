@@ -2329,39 +2329,6 @@ def sidebar_monitor_fragment() -> None:
         chart_max=100,
     )
     
-    # --- Disk ---
-    storage_admission = snapshot.get("storage_admission", {})
-    disk_used = disk.get("used_gb")
-    disk_total = disk.get("total_gb")
-    disk_free = disk.get("free_gb")
-    disk_pct = disk.get("used_pct")
-    disk_history = append_monitor_history(
-        "disk_used_pct",
-        disk_pct if isinstance(disk_pct, (int, float)) else None,
-    )
-    if isinstance(disk_used, (int, float)) and isinstance(disk_total, (int, float)):
-        disk_main = f"{disk_used:.1f}/{disk_total:.1f} GB"
-    else:
-        disk_main = "-"
-    if isinstance(disk_pct, (int, float)) and isinstance(disk_free, (int, float)):
-        disk_sub = f"{disk_pct:.0f}% used | {disk_free:.1f} GB free"
-    else:
-        disk_sub = "Storage usage unavailable"
-    render_resource_card(
-        "Disk",
-        disk_main,
-        disk_sub,
-        disk_history,
-        color="#DC2626",
-        chart_min=0,
-        chart_max=100,
-    )
-    if not storage_admission.get("allowed", True):
-        st.warning(
-            "Storage protection is active. New submissions and queued-job dispatch are blocked: "
-            f"{storage_admission.get('reason', 'storage status unavailable')}"
-        )
-
     # --- GPU Memory ---
     if gpu_rows:
         gpu = gpu_rows[0]
@@ -2395,6 +2362,28 @@ def sidebar_monitor_fragment() -> None:
             "No GPU metrics detected",
             None,
             color="#7C3AED",
+        )
+
+    # --- Disk ---
+    # Disk capacity changes slowly compared with CPU/RAM/GPU metrics, so keep
+    # it as a compact status line rather than a time-series resource card.
+    storage_admission = snapshot.get("storage_admission", {})
+    disk_used = disk.get("used_gb")
+    disk_total = disk.get("total_gb")
+    disk_free = disk.get("free_gb")
+    disk_pct = disk.get("used_pct")
+    if all(isinstance(value, (int, float)) for value in (disk_used, disk_total, disk_free, disk_pct)):
+        st.caption(
+            f"Disk: {disk_used:.1f}/{disk_total:.1f} GB | "
+            f"{disk_pct:.0f}% used | {disk_free:.1f} GB free"
+        )
+    else:
+        st.caption("Disk: Storage usage unavailable")
+
+    if not storage_admission.get("allowed", True):
+        st.warning(
+            "Storage protection is active. New submissions and queued-job dispatch are blocked: "
+            f"{storage_admission.get('reason', 'storage status unavailable')}"
         )
 
     with st.expander("GPU details", expanded=False):
