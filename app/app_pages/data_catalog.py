@@ -215,6 +215,36 @@ def render_catalog() -> None:
         if len(selected_sessions) == 1:
             archive_session_id = next(iter(selected_sessions))
             archive_job_ids = [str(item.get("job_id") or "") for item in selected_jobs]
+            if len(archive_job_ids) > 1:
+                target_job_id = archive_job_ids[0]
+                multi_results_url = database_page_url(
+                    "results",
+                    archive_session_id,
+                    target_job_id,
+                    archive_job_ids,
+                )
+                multi_chemiscope_url = database_page_url(
+                    "chemiscope",
+                    archive_session_id,
+                    target_job_id,
+                    archive_job_ids,
+                )
+                multi_cols = st.columns(2)
+                if multi_results_url:
+                    multi_cols[0].link_button(
+                        "Open selected in Results",
+                        multi_results_url,
+                        icon=":material/open_in_new:",
+                        width="stretch",
+                    )
+                if multi_chemiscope_url:
+                    multi_cols[1].link_button(
+                        "Open selected in Chemiscope",
+                        multi_chemiscope_url,
+                        icon=":material/open_in_new:",
+                        width="stretch",
+                    )
+
             if st.button(
                 ":material/checklist: Select jobs in sidebar",
                 width="stretch",

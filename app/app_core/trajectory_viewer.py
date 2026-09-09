@@ -456,9 +456,20 @@ def build_chemiscope_dataset(
         }
         text_properties.add("source")
 
+    unified_scan_properties = [
+        column
+        for column in ("SCAN_bond [Å]", "SCAN_angle [deg]", "SCAN_dihedral [deg]")
+        if column in numeric_properties
+    ]
     scan_properties = [
-        column for column in frame_table.columns
-        if str(column).startswith("SCAN_") and str(column) in numeric_properties
+        *unified_scan_properties,
+        *(
+            str(column)
+            for column in frame_table.columns
+            if str(column).startswith("SCAN_")
+            and str(column) in numeric_properties
+            and str(column) not in unified_scan_properties
+        ),
     ]
     delta_energy_name = "Delta E vs. reactant [kcal/mol]"
 

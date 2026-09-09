@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import hashlib
+import re
 from pathlib import Path
 
 import numpy as np
@@ -38,6 +39,118 @@ TRAJECTORY_FILTERS = (
     "*_opt.traj",
     "*_tsopt.traj",
 )
+
+SCAN_COLUMN_PATTERN = re.compile(
+    r"^SCAN_(bond|angle|dihedral)(?:_[0-9]+(?:_[0-9]+)*)? \[(Å|deg)\]$"
+)
+SCAN_UNIFIED_COLUMNS = {
+    ("bond", "Å"): "SCAN_bond [Å]",
+    ("angle", "deg"): "SCAN_angle [deg]",
+    ("dihedral", "deg"): "SCAN_dihedral [deg]",
+}
+
+
+def scan_column_kind(column: str) -> tuple[str, str] | None:
+    """Return the SCAN coordinate kind/unit encoded in a result CSV column."""
+    match = SCAN_COLUMN_PATTERN.match(str(column))
+    if not match:
+        return None
+    scan_type, unit = match.groups()
+    expected_unit = "Å" if scan_type == "bond" else "deg"
+    if unit != expected_unit:
+        return None
+    return scan_type, unit
+
+
+def unify_scan_target_columns(
+    frame_table: pd.DataFrame,
+) -> tuple[pd.DataFrame, str | None, str]:
+    """Add one common SCAN coordinate column across compatible sources.
+
+    Atom indices are deliberately ignored, but coordinate types are never mixed:
+    bond, angle, and dihedral scans remain distinct even when their units match.
+    Original per-target columns are preserved for inspection.
+    """
+    scan_columns = {
+        str(column): scan_column_kind(str(column))
+        for column in frame_table.columns
+        if scan_column_kind(str(column)) is not None
+    }
+    if not scan_columns:
+        return frame_table, None, "no recognized SCAN coordinate columns were found"
+
+    if "source" in frame_table.columns:
+        source_groups = [
+            (str(source), group.index)
+            for source, group in frame_table.groupby("source", sort=False, dropna=False)
+        ]
+    else:
+        source_groups = [("dataset", frame_table.index)]
+
+    source_columns: dict[str, str] = {}
+    source_kinds: dict[str, tuple[str, str]] = {}
+    for source, indices in source_groups:
+        present: list[tuple[str, tuple[str, str]]] = []
+        for column, kind in scan_columns.items():
+            values = pd.to_numeric(frame_table.loc[indices, column], errors="coerce")
+            if np.isfinite(values.to_numpy(dtype=float)).any():
+                present.append((column, kind))
+
+        if not present:
+            return (
+                frame_table,
+                None,
+                f"source `{source}` has no recognized SCAN coordinate",
+            )
+
+        kinds = {kind for _, kind in present}
+        if len(kinds) != 1:
+            labels = ", ".join(sorted(kind[0] for kind in kinds))
+            return (
+                frame_table,
+                None,
+                f"source `{source}` contains mixed SCAN coordinate types ({labels})",
+            )
+        if len(present) != 1:
+            columns = ", ".join(column for column, _ in present)
+            return (
+                frame_table,
+                None,
+                f"source `{source}` has multiple SCAN target columns ({columns})",
+            )
+
+        source_columns[source] = present[0][0]
+        source_kinds[source] = present[0][1]
+
+    selected_kinds = set(source_kinds.values())
+    if len(selected_kinds) != 1:
+        labels = ", ".join(sorted(kind[0] for kind in selected_kinds))
+        return (
+            frame_table,
+            None,
+            f"selected trajectories use different SCAN coordinate types ({labels})",
+        )
+
+    common_kind = next(iter(selected_kinds))
+    unified_column = SCAN_UNIFIED_COLUMNS[common_kind]
+    unified_values = pd.Series(np.nan, index=frame_table.index, dtype=float)
+    for source, indices in source_groups:
+        source_column = source_columns[source]
+        unified_values.loc[indices] = pd.to_numeric(
+            frame_table.loc[indices, source_column], errors="coerce"
+        ).to_numpy(dtype=float)
+
+    result = frame_table.copy()
+    result[unified_column] = unified_values
+    finite_count = int(np.isfinite(unified_values.to_numpy(dtype=float)).sum())
+    if finite_count == len(result):
+        detail = f"{common_kind[0]} targets were unified as `{unified_column}`"
+    else:
+        detail = (
+            f"{common_kind[0]} targets were unified as `{unified_column}`, but "
+            f"{len(result) - finite_count} frame(s) have no finite coordinate"
+        )
+    return result, unified_column, detail
 
 
 def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFrame:
@@ -169,7 +282,14 @@ def numeric_columns(df: pd.DataFrame) -> list[str]:
 
 def prioritized_plot_columns(columns: list[str]) -> list[str]:
     priority: list[str] = []
-    priority.extend(column for column in columns if column.startswith("SCAN_"))
+    for unified_column in SCAN_UNIFIED_COLUMNS.values():
+        if unified_column in columns and unified_column not in priority:
+            priority.append(unified_column)
+    priority.extend(
+        column
+        for column in columns
+        if column.startswith("SCAN_") and column not in priority
+    )
     for preferred in [
         "Delta E vs. reactant [kcal/mol]",
         "Heavy-RMSD vs frame 0 [Å]",
@@ -389,7 +509,8 @@ if st.session_state.get(join_context_key) != selection_kind:
     st.session_state[join_context_key] = selection_kind
 
 with st.container(border=True):
-    view_cols = st.columns([1, 1, 1])
+    multi_trajectory = len(selected_file_rows) > 1
+    view_cols = st.columns([1, 1, 1, 1] if multi_trajectory else [1, 1, 1])
     join_points = view_cols[0].toggle(
         "Join points",
         key=join_points_key,
@@ -412,6 +533,21 @@ with st.container(border=True):
         default="default",
         key=f"{session_id}_chemiscope_mode",
     )
+    unify_scan_targets = False
+    if multi_trajectory:
+        unify_scan_key = f"{session_id}_chemiscope_unify_scan_targets"
+        st.session_state.setdefault(unify_scan_key, True)
+        unify_scan_targets = bool(
+            view_cols[3].toggle(
+                "Unify SCAN targets",
+                key=unify_scan_key,
+                help=(
+                    "Treat different atom-index targets as one comparison axis when "
+                    "all selected trajectories use the same coordinate type. Bond, "
+                    "angle, and dihedral scans are never mixed."
+                ),
+            )
+        )
     if len(selected_file_rows) > 1 and join_points:
         st.caption(
             "Join points is enabled for a combined dataset; the last frame of one "
@@ -518,6 +654,11 @@ for _, selected_row in selected_file_rows.iterrows():
 frame_table = pd.concat(frame_tables, ignore_index=True, sort=False)
 structures = all_structures
 
+scan_unified_column: str | None = None
+scan_unify_detail = ""
+if len(loaded_trajectories) > 1 and unify_scan_targets:
+    frame_table, scan_unified_column, scan_unify_detail = unify_scan_target_columns(frame_table)
+
 if property_messages:
     with st.expander("Property source warnings", expanded=False):
         for message in property_messages:
@@ -556,6 +697,14 @@ if csv_fields:
     )
 else:
     st.caption("CSV fields merged: 0")
+
+if len(loaded_trajectories) > 1 and unify_scan_targets:
+    if scan_unified_column:
+        st.caption(
+            f"SCAN target unification: {scan_unify_detail}. Original target columns are retained."
+        )
+    else:
+        st.caption(f"SCAN target unification skipped: {scan_unify_detail}.")
 
 left, right = st.columns([1, 2])
 with left:
