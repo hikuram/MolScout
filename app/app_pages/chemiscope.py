@@ -1131,6 +1131,13 @@ try:
         playback_delay=int(playback_delay),
         pinned_indices=initial_pinned_indices,
     )
+
+    # A categorical symbol adds no information for a single trajectory and
+    # unnecessarily creates a one-item legend. Leaving the Chemiscope symbol
+    # setting unset corresponds to the fixed marker mode.
+    if len(loaded_trajectories) == 1:
+        settings.setdefault("map", {}).pop("symbol", None)
+
     with st.expander("Chemiscope settings", expanded=False):
         st.json(settings)
 
