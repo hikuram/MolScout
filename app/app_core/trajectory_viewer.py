@@ -386,6 +386,7 @@ def build_chemiscope_dataset(
         "step": "Frame index within the source trajectory.",
         "dataset_index": "Frame index after concatenating the selected trajectories.",
         "source": "Unique source trajectory identifier.",
+        "series_label": "Human-readable label used to compare source trajectories.",
         "trajectory": "Source trajectory file name.",
         "job": "MolScout job identifier.",
         "property_source": "CSV file used to enrich this trajectory, when available.",
@@ -491,12 +492,19 @@ def build_chemiscope_dataset(
     )
     color_prop = y_prop if y_prop in numeric_properties else "source"
 
+    source_count = (
+        frame_table["source"].astype(str).nunique()
+        if "source" in frame_table.columns and "source" in text_properties
+        else 0
+    )
     job_count = (
         frame_table["job"].astype(str).nunique()
         if "job" in frame_table.columns and "job" in text_properties
         else 0
     )
-    if job_count > 1:
+    if source_count > 1 and "series_label" in text_properties:
+        symbol_prop = "series_label"
+    elif job_count > 1:
         symbol_prop = "job"
     elif "source" in text_properties:
         symbol_prop = "source"

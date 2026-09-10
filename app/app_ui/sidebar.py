@@ -35,6 +35,7 @@ DB_JOB_SELECTOR_WIDGET_KEY = "database_job_selector_id"
 DB_REFRESH_GENERATION_STATE_KEY = "database_refresh_generation"
 DB_SESSION_QUERY_PARAM_KEY = "db_session"
 DB_JOB_QUERY_PARAM_KEY = "db_job"
+DB_JOBS_QUERY_PARAM_KEY = "db_jobs"
 DB_QUERY_TARGET_APPLIED_STATE_KEY = "database_query_target_applied"
 DB_MULTI_JOB_MODE_STATE_KEY = "database_multi_job_mode"
 DB_MULTI_JOB_MODE_WIDGET_KEY = "database_multi_job_mode_widget"
@@ -276,7 +277,47 @@ def _query_param_text(key: str) -> str:
     return str(raw_value or "")
 
 
-def _persist_database_query_target(session_id: str, job_id: str = "") -> None:
+def _query_param_values(key: str) -> list[str]:
+    """Return every value for a repeated URL query parameter."""
+    try:
+        raw_values = st.query_params.get_all(key)
+    except (AttributeError, TypeError):
+        raw_value = st.query_params.get(key)
+        if isinstance(raw_value, list):
+            raw_values = raw_value
+        elif raw_value is None:
+            raw_values = []
+        else:
+            raw_values = [raw_value]
+
+    values: list[str] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        value = str(raw_value or "")
+        if value and value not in seen:
+            values.append(value)
+            seen.add(value)
+    return values
+
+
+def _database_query_token(session_id: str, job_id: str, job_ids: list[str]) -> str:
+    return f"{session_id}|{job_id}|{'|'.join(job_ids)}"
+
+
+def _persist_database_query_target(
+    session_id: str,
+    job_id: str = "",
+    job_ids: list[str] | None = None,
+    *,
+    sync_job_ids: bool = True,
+) -> None:
+    """Persist the database deep-link target into the browser URL.
+
+    Session and focused Target Job can be synchronized immediately. Multi-job
+    selection is intentionally committed only when ``sync_job_ids`` is true
+    (normally the explicit Refresh action), so row-by-row selection does not
+    rewrite the address bar on every click.
+    """
     if session_id:
         st.query_params[DB_SESSION_QUERY_PARAM_KEY] = session_id
     else:
@@ -285,46 +326,96 @@ def _persist_database_query_target(session_id: str, job_id: str = "") -> None:
         st.query_params[DB_JOB_QUERY_PARAM_KEY] = job_id
     else:
         st.query_params.pop(DB_JOB_QUERY_PARAM_KEY, None)
-    st.session_state[DB_QUERY_TARGET_APPLIED_STATE_KEY] = f"{session_id}|{job_id}"
+
+    if sync_job_ids:
+        if job_ids is None:
+            if bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False)):
+                job_ids = [
+                    str(selected_job_id)
+                    for selected_job_id in st.session_state.get(DB_SELECTED_JOB_IDS_STATE_KEY, [])
+                    if str(selected_job_id)
+                ]
+            else:
+                job_ids = []
+        else:
+            job_ids = [
+                str(selected_job_id) for selected_job_id in job_ids if str(selected_job_id)
+            ]
+
+        # Repeated query parameters preserve the complete multi-job selection while
+        # db_job remains the focused Target Job. Legacy single-job URLs omit db_jobs.
+        if job_ids:
+            st.query_params[DB_JOBS_QUERY_PARAM_KEY] = job_ids
+        else:
+            st.query_params.pop(DB_JOBS_QUERY_PARAM_KEY, None)
+
+    committed_job_ids = _query_param_values(DB_JOBS_QUERY_PARAM_KEY)
+    st.session_state[DB_QUERY_TARGET_APPLIED_STATE_KEY] = _database_query_token(
+        session_id, job_id, committed_job_ids
+    )
 
 
 def _apply_database_query_target(sessions: list[dict]) -> None:
     session_id = _query_param_text(DB_SESSION_QUERY_PARAM_KEY)
-    job_id = _query_param_text(DB_JOB_QUERY_PARAM_KEY)
-    token = f"{session_id}|{job_id}"
+    requested_target_job_id = _query_param_text(DB_JOB_QUERY_PARAM_KEY)
+    requested_job_ids = _query_param_values(DB_JOBS_QUERY_PARAM_KEY)
+    token = _database_query_token(session_id, requested_target_job_id, requested_job_ids)
     applied_token = str(st.session_state.get(DB_QUERY_TARGET_APPLIED_STATE_KEY) or "")
     if token == applied_token:
-        current_session = str(st.session_state.get(SELECTED_SESSION_STATE_KEY) or "")
-        current_job = str(st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or "")
-        session_matches = not session_id or current_session == session_id
-        job_matches = not job_id or current_job == job_id
-        if session_matches and job_matches:
-            return
+        # The current URL has already been applied. Local row-selection state is
+        # allowed to diverge until the user explicitly commits it with Refresh.
+        return
 
     session_ids = {str(item.get("session_id") or "") for item in sessions}
     if session_id in session_ids:
         jobs = list_jobs(session_id)
-        job_ids = {str(item.get("job_id") or "") for item in jobs}
+        available_job_ids = [str(item.get("job_id") or "") for item in jobs]
+        available_job_id_set = set(available_job_ids)
+        valid_requested_job_ids = [
+            job_id for job_id in requested_job_ids if job_id in available_job_id_set
+        ]
+
         # A database deep link is an explicit browser-local session choice.
         persist_selected_session(session_id)
         # Safe because database targets are prepared before the shared widget
         # is rendered by the application entrypoint.
         st.session_state[SESSION_SELECTOR_WIDGET_KEY] = session_id
-        if job_id in job_ids:
-            st.session_state[DB_SELECTED_JOB_STATE_KEY] = job_id
-            st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = job_id
-            st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
-            st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
-            st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [job_id]
+
+        if valid_requested_job_ids:
+            target_job_id = (
+                requested_target_job_id
+                if requested_target_job_id in valid_requested_job_ids
+                else valid_requested_job_ids[0]
+            )
+            st.session_state[DB_SELECTED_JOB_STATE_KEY] = target_job_id
+            st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = target_job_id
+            st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = True
+            st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = True
+            st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = valid_requested_job_ids
             st.session_state[DB_JOB_TABLE_SYNC_STATE_KEY] = {
                 "session_id": session_id,
-                "job_ids": [job_id],
+                "job_ids": valid_requested_job_ids,
+            }
+        elif requested_target_job_id in available_job_id_set:
+            st.session_state[DB_SELECTED_JOB_STATE_KEY] = requested_target_job_id
+            st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = requested_target_job_id
+            st.session_state[DB_MULTI_JOB_MODE_STATE_KEY] = False
+            st.session_state[DB_MULTI_JOB_MODE_WIDGET_KEY] = False
+            st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [requested_target_job_id]
+            st.session_state[DB_JOB_TABLE_SYNC_STATE_KEY] = {
+                "session_id": session_id,
+                "job_ids": [requested_target_job_id],
             }
 
     st.session_state[DB_QUERY_TARGET_APPLIED_STATE_KEY] = token
 
 
-def database_page_url(page_path: str, session_id: str, job_id: str) -> str:
+def database_page_url(
+    page_path: str,
+    session_id: str,
+    job_id: str,
+    job_ids: list[str] | None = None,
+) -> str:
     """Build an absolute database deep link that opens in a new browser tab."""
     try:
         current_url = str(st.context.url or "")
@@ -340,13 +431,62 @@ def database_page_url(page_path: str, session_id: str, job_id: str) -> str:
     else:
         root_path = ""
     target_path = f"{root_path}/{page_path.lstrip('/')}"
-    query = urlencode(
-        {
-            DB_SESSION_QUERY_PARAM_KEY: str(session_id),
-            DB_JOB_QUERY_PARAM_KEY: str(job_id),
-        }
-    )
+    query_items: list[tuple[str, str]] = [
+        (DB_SESSION_QUERY_PARAM_KEY, str(session_id)),
+        (DB_JOB_QUERY_PARAM_KEY, str(job_id)),
+    ]
+    if job_ids:
+        seen_job_ids: set[str] = set()
+        for selected_job_id in job_ids:
+            normalized_job_id = str(selected_job_id or "")
+            if not normalized_job_id or normalized_job_id in seen_job_ids:
+                continue
+            query_items.append((DB_JOBS_QUERY_PARAM_KEY, normalized_job_id))
+            seen_job_ids.add(normalized_job_id)
+    query = urlencode(query_items)
     return urlunsplit((parsed.scheme, parsed.netloc, target_path, query, ""))
+
+
+def _database_committed_share_url() -> str:
+    """Return a copy-ready URL for the last committed database selection."""
+    try:
+        current_url = str(st.context.url or "")
+    except Exception:
+        return ""
+    if not current_url:
+        return ""
+
+    parsed = urlsplit(current_url)
+    query_items: list[tuple[str, str]] = []
+    session_id = _query_param_text(DB_SESSION_QUERY_PARAM_KEY)
+    job_id = _query_param_text(DB_JOB_QUERY_PARAM_KEY)
+    job_ids = _query_param_values(DB_JOBS_QUERY_PARAM_KEY)
+    if session_id:
+        query_items.append((DB_SESSION_QUERY_PARAM_KEY, session_id))
+    if job_id:
+        query_items.append((DB_JOB_QUERY_PARAM_KEY, job_id))
+    query_items.extend((DB_JOBS_QUERY_PARAM_KEY, selected_job_id) for selected_job_id in job_ids)
+    query = urlencode(query_items)
+    return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, query, ""))
+
+
+def _database_selection_needs_refresh(
+    session_id: str,
+    job_id: str,
+    job_ids: list[str],
+    *,
+    multi_enabled: bool,
+) -> bool:
+    """Whether local multi-job state differs from the share URL snapshot."""
+    committed_session = _query_param_text(DB_SESSION_QUERY_PARAM_KEY)
+    committed_job = _query_param_text(DB_JOB_QUERY_PARAM_KEY)
+    committed_job_ids = _query_param_values(DB_JOBS_QUERY_PARAM_KEY)
+    desired_job_ids = [str(value) for value in job_ids if str(value)] if multi_enabled else []
+    return (
+        committed_session != str(session_id or "")
+        or committed_job != str(job_id or "")
+        or committed_job_ids != desired_job_ids
+    )
 
 
 def _resolve_database_session_id(sessions: list[dict]) -> str:
@@ -398,7 +538,7 @@ def _sync_database_job_from_widget() -> None:
         if not bool(st.session_state.get(DB_MULTI_JOB_MODE_STATE_KEY, False)):
             st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = [selected]
         session_id = str(st.session_state.get(DB_SELECTED_SESSION_STATE_KEY) or "")
-        _persist_database_query_target(session_id, selected)
+        _persist_database_query_target(session_id, selected, sync_job_ids=False)
 
 
 def database_selection() -> tuple[str, str]:
@@ -614,8 +754,9 @@ def _render_session_jobs_selector(
             focused_job_id = selected_job_ids[0]
             st.session_state[DB_SELECTED_JOB_STATE_KEY] = focused_job_id
             st.session_state[DB_JOB_SELECTOR_WIDGET_KEY] = focused_job_id
-            _persist_database_query_target(session_id, focused_job_id)
 
+    # Do not update db_jobs here. Multi-row selection can involve several rapid
+    # reruns; the share/deep-link selection is committed explicitly by Refresh.
     return selected_job_ids
 
 
@@ -698,6 +839,9 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
 
             jobs = list_jobs(selected_session_id)
             selected_job = None
+            selected_job_ids: list[str] = []
+            selected_job_id = ""
+            multi_enabled = False
             if jobs:
                 job_ids = [str(item["job_id"]) for item in jobs]
                 active_job_id = _resolve_database_job_id(jobs)
@@ -738,7 +882,9 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
                     if not multi_enabled:
                         selected_job_ids = [selected_job_id]
                         st.session_state[DB_SELECTED_JOB_IDS_STATE_KEY] = selected_job_ids
-                    _persist_database_query_target(selected_session_id, selected_job_id)
+                    _persist_database_query_target(
+                        selected_session_id, selected_job_id, sync_job_ids=False
+                    )
                     selected_job = next(
                         (item for item in jobs if str(item["job_id"]) == selected_job_id),
                         None,
@@ -829,8 +975,39 @@ def render_database_sidebar(sessions: list[dict] | None = None) -> dict | None:
                 key="database_refresh",
                 help=t('Reload the database and files from their current state.'),
             ):
+                selected_job_id = str(
+                    st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or selected_job_id or ""
+                )
+                committed_job_ids = selected_job_ids if multi_enabled else []
+                _persist_database_query_target(
+                    selected_session_id,
+                    selected_job_id,
+                    committed_job_ids,
+                    sync_job_ids=True,
+                )
                 st.session_state[DB_REFRESH_GENERATION_STATE_KEY] = (
                     int(st.session_state.get(DB_REFRESH_GENERATION_STATE_KEY, 0)) + 1
+                )
+
+            selected_job_id = str(
+                st.session_state.get(DB_SELECTED_JOB_STATE_KEY) or selected_job_id or ""
+            )
+            if _database_selection_needs_refresh(
+                selected_session_id,
+                selected_job_id,
+                selected_job_ids,
+                multi_enabled=multi_enabled,
+            ):
+                st.caption("Selection changed — Refresh to update Share URL.")
+
+            share_url = _database_committed_share_url()
+            if share_url:
+                st.caption("Share URL")
+                st.code(
+                    share_url,
+                    language=None,
+                    wrap_lines=False,
+                    height="content",
                 )
 
             st.caption("Manual refresh only")

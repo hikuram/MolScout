@@ -49,6 +49,15 @@ SCAN_UNIFIED_COLUMNS = {
     ("dihedral", "deg"): "SCAN_dihedral [deg]",
 }
 
+SERIES_LABEL_OPTIONS = (
+    "Job Note + Job ID",
+    "Job ID + Job Note",
+    "Job Note",
+    "Job ID",
+    "Source path",
+    "Custom",
+)
+
 
 def scan_column_kind(column: str) -> tuple[str, str] | None:
     """Return the SCAN coordinate kind/unit encoded in a result CSV column."""
@@ -151,6 +160,52 @@ def unify_scan_target_columns(
             f"{len(result) - finite_count} frame(s) have no finite coordinate"
         )
     return result, unified_column, detail
+
+
+def series_label_for_source(
+    mode: str,
+    *,
+    job_id: str,
+    job_note: str,
+    source: str,
+) -> str:
+    """Return a readable series label while keeping empty notes usable."""
+    job_id = str(job_id or "-")
+    job_note = str(job_note or "").strip()
+    source = str(source or job_id)
+    if mode == "Job ID":
+        return job_id
+    if mode == "Job Note":
+        return job_note or job_id
+    if mode == "Job ID + Job Note":
+        return f"{job_id} | {job_note}" if job_note else job_id
+    if mode == "Source path":
+        return source
+    # Default and Custom seed: Note first, then the stable Job ID.
+    return f"{job_note} | {job_id}" if job_note else job_id
+
+
+def selected_series_rows(
+    selected_file_rows: pd.DataFrame,
+    jobs_by_id: dict[str, dict],
+) -> list[dict[str, str]]:
+    """Build one metadata row per selected source trajectory."""
+    rows: list[dict[str, str]] = []
+    for _, selected_row in selected_file_rows.iterrows():
+        rel_path = str(selected_row["rel_path"])
+        job_id = str(selected_row["job_id"] or "")
+        inside_job = trajectory_path_within_job(rel_path)
+        source = f"{job_id}/{inside_job}" if job_id else rel_path
+        job = jobs_by_id.get(job_id) or {}
+        rows.append(
+            {
+                "source": source,
+                "job_id": job_id or "-",
+                "job_note": str(job.get("notes") or ""),
+                "trajectory": inside_job,
+            }
+        )
+    return rows
 
 
 def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFrame:
@@ -554,6 +609,76 @@ with st.container(border=True):
             "trajectory will also connect to the first frame of the next trajectory."
         )
 
+series_rows = selected_series_rows(selected_file_rows, jobs_by_id)
+series_label_by_source: dict[str, str] = {}
+if len(series_rows) > 1:
+    label_mode_key = f"{session_id}_chemiscope_series_label_mode"
+    label_mode = st.selectbox(
+        "Series label",
+        options=list(SERIES_LABEL_OPTIONS),
+        index=0,
+        key=label_mode_key,
+        help=(
+            "Controls the label used for Quick plot series and the Chemiscope "
+            "symbol property. Empty Job Notes fall back to Job ID."
+        ),
+    )
+    if label_mode == "Custom":
+        selected_series_signature = hashlib.sha1(
+            "|".join(row["source"] for row in series_rows).encode("utf-8")
+        ).hexdigest()[:12]
+        custom_rows = pd.DataFrame(
+            [
+                {
+                    "Job": row["job_id"],
+                    "Job Note": row["job_note"],
+                    "Trajectory": row["trajectory"],
+                    "Label": series_label_for_source(
+                        "Job Note + Job ID",
+                        job_id=row["job_id"],
+                        job_note=row["job_note"],
+                        source=row["source"],
+                    ),
+                }
+                for row in series_rows
+            ]
+        )
+        edited_rows = st.data_editor(
+            custom_rows,
+            hide_index=True,
+            width="stretch",
+            height=min(260, 36 + 35 * len(custom_rows)),
+            disabled=["Job", "Job Note", "Trajectory"],
+            num_rows="fixed",
+            key=f"{session_id}_chemiscope_custom_series_labels_{selected_series_signature}",
+            column_config={
+                "Job": st.column_config.TextColumn("Job", width="medium"),
+                "Job Note": st.column_config.TextColumn("Job Note", width="large"),
+                "Trajectory": st.column_config.TextColumn("Trajectory", width="large"),
+                "Label": st.column_config.TextColumn("Label", width="large"),
+            },
+        )
+        for row, (_, edited_row) in zip(series_rows, edited_rows.iterrows(), strict=True):
+            label_value = edited_row.get("Label")
+            custom_label = "" if pd.isna(label_value) else str(label_value).strip()
+            series_label_by_source[row["source"]] = custom_label or series_label_for_source(
+                "Job Note + Job ID",
+                job_id=row["job_id"],
+                job_note=row["job_note"],
+                source=row["source"],
+            )
+    else:
+        for row in series_rows:
+            series_label_by_source[row["source"]] = series_label_for_source(
+                str(label_mode),
+                job_id=row["job_id"],
+                job_note=row["job_note"],
+                source=row["source"],
+            )
+else:
+    only_row = series_rows[0]
+    series_label_by_source[only_row["source"]] = only_row["source"]
+
 all_structures: list = []
 frame_tables: list[pd.DataFrame] = []
 source_starts: list[int] = []
@@ -620,6 +745,7 @@ for _, selected_row in selected_file_rows.iterrows():
     local_table["job"] = job_id or "-"
     local_table["trajectory"] = selected_path.name
     local_table["source"] = source_label
+    local_table["series_label"] = series_label_by_source.get(source_label, source_label)
     local_table["property_source"] = property_source
 
     metadata_columns = [
@@ -627,6 +753,7 @@ for _, selected_row in selected_file_rows.iterrows():
         "job",
         "trajectory",
         "source",
+        "series_label",
         "step",
         "property_source",
     ]
@@ -647,6 +774,7 @@ for _, selected_row in selected_file_rows.iterrows():
             "size_bytes": int(selected_row["size_bytes"]),
             "frames": len(structures),
             "property_source": property_source,
+            "series_label": series_label_by_source.get(source_label, source_label),
         }
     )
     offset += len(structures)
@@ -754,6 +882,7 @@ with right:
             {
                 "__plot_x": pd.to_numeric(frame_table[plot_x], errors="coerce"),
                 "__plot_y": pd.to_numeric(frame_table[plot_y], errors="coerce"),
+                "series_label": frame_table["series_label"].astype(str),
                 "source": frame_table["source"].astype(str),
             }
         )
@@ -763,19 +892,29 @@ with right:
         if plot_df.empty:
             st.info("No finite values are available for the selected axes.")
         elif len(loaded_trajectories) > 1:
-            pivot = plot_df.pivot_table(
-                index="__plot_x",
-                columns="source",
-                values="__plot_y",
-                aggfunc="first",
-            ).sort_index()
-            pivot.index.name = str(plot_x)
-            st.line_chart(pivot, height=320)
-        else:
-            single_plot = plot_df.sort_values("__plot_x").rename(
-                columns={"__plot_x": str(plot_x), "__plot_y": str(plot_y)}
+            # Keep long-form rows so each trajectory can have its own measured
+            # SCAN coordinates. Pivoting on floating-point X values creates NaN
+            # gaps whenever two scans do not hit exactly the same coordinates.
+            multi_plot = plot_df.sort_values(["series_label", "__plot_x", "source"])
+            st.line_chart(
+                multi_plot,
+                x="__plot_x",
+                y="__plot_y",
+                color="series_label",
+                x_label=str(plot_x),
+                y_label=str(plot_y),
+                height=320,
             )
-            st.line_chart(single_plot, x=str(plot_x), y=str(plot_y), height=320)
+        else:
+            single_plot = plot_df.sort_values("__plot_x")
+            st.line_chart(
+                single_plot,
+                x="__plot_x",
+                y="__plot_y",
+                x_label=str(plot_x),
+                y_label=str(plot_y),
+                height=320,
+            )
     else:
         st.info(t('No numeric energy or force properties were found in Atoms.info or arrays.'))
 
@@ -810,7 +949,7 @@ try:
     viewer_identity_parts = [
         (
             f"{item['rel_path']}:{item['mtime_ns']}:{item['size_bytes']}:"
-            f"{item['property_source']}"
+            f"{item['property_source']}:{item['series_label']}"
         )
         for item in loaded_trajectories
     ]
