@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import fnmatch
 import hashlib
 import re
 from pathlib import Path
@@ -11,7 +10,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from app_ui.i18n import t, tf
+from app_ui.i18n import t
 
 from app_core.session_manager import get_job, get_session, session_dir
 from app_core.trajectory_viewer import (
@@ -31,13 +30,15 @@ from app_ui.sidebar import database_job_selection, database_selection
 from app_ui.views import file_size_label
 
 
-TRAJECTORY_FILTERS = (
-    "*.traj",
-    "init_path.traj",
-    "irc.traj",
-    "optpoints.traj",
-    "*_opt.traj",
-    "*_tsopt.traj",
+TRAJECTORY_ROLE_FILTERS = (
+    "All trajectories",
+    "Initial path",
+    "IRC",
+    "Optpoints",
+    "MF-SCAN",
+    "Optimization",
+    "TS optimization",
+    "Other",
 )
 
 SCAN_COLUMN_PATTERN = re.compile(
@@ -270,13 +271,13 @@ def selected_series_rows(
     return rows
 
 
-def filter_trajectory_files(files_df: pd.DataFrame, pattern: str) -> pd.DataFrame:
-    if files_df.empty or pattern == "*.traj":
+def filter_trajectory_files(files_df: pd.DataFrame, role_filter: str) -> pd.DataFrame:
+    """Filter prepared trajectory rows by their analysis role."""
+    if files_df.empty or role_filter == "All trajectories":
         return files_df.reset_index(drop=True)
-
-    names = files_df["rel_path"].map(lambda value: Path(str(value)).name)
-    mask = names.map(lambda name: fnmatch.fnmatchcase(name, pattern))
-    return files_df[mask].reset_index(drop=True)
+    if "role" not in files_df.columns:
+        return files_df.iloc[0:0].copy().reset_index(drop=True)
+    return files_df[files_df["role"].astype(str) == role_filter].reset_index(drop=True)
 
 
 def render_dependency_hint(error: Exception) -> None:
@@ -307,36 +308,25 @@ def trajectory_path_within_job(rel_path: str) -> str:
     return Path(str(rel_path)).as_posix()
 
 
-def trajectory_role(path: Path) -> str:
-    name = path.name
-    if name == "init_path.traj":
-        return "Initial path"
-    if name == "irc.traj":
-        return "IRC"
-    if name == "optpoints.traj":
-        return "Opt points"
-    if name.endswith("_tsopt.traj"):
-        return "TS optimization"
-    if name.endswith("_opt.traj"):
-        return "Optimization"
-    return "Trajectory"
+def expected_result_name(job: dict | None) -> str:
+    return Path(str((job or {}).get("result_name") or "result.csv")).name
 
 
-def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None:
-    """Return the result CSV paired with an init_path trajectory, when present.
+def find_companion_csv(
+    trajectory_path: Path,
+    job: dict | None,
+    csv_name: str,
+) -> Path | None:
+    """Locate a CSV companion in live or organized MolScout output layouts.
 
-    MolScout artifact organization places CSV files under ``Tables/`` in normal
-    completed jobs, while older/imported jobs can still keep ``result.csv`` next
-    to the trajectory. Check both layouts and then fall back to a bounded recursive
-    search under the recorded output directory.
+    Completed jobs move CSV files into ``Tables/`` while preserving the original
+    relative subdirectory. Older/imported or currently running jobs can keep the
+    file beside the trajectory. The resolver understands both forms.
     """
-    if trajectory_path.name != "init_path.traj":
-        return None
-
-    result_name = Path(str((job or {}).get("result_name") or "result.csv")).name
+    csv_name = Path(str(csv_name)).name
     candidates = [
-        trajectory_path.parent / result_name,
-        trajectory_path.parent / "Tables" / result_name,
+        trajectory_path.parent / csv_name,
+        trajectory_path.parent / "Tables" / csv_name,
     ]
 
     output_dir_text = str((job or {}).get("output_dir") or "").strip()
@@ -344,8 +334,8 @@ def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None
     if output_dir is not None:
         candidates.extend(
             [
-                output_dir / result_name,
-                output_dir / "Tables" / result_name,
+                output_dir / csv_name,
+                output_dir / "Tables" / csv_name,
             ]
         )
         try:
@@ -353,9 +343,14 @@ def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None
         except ValueError:
             relative_parent = None
         if relative_parent is not None:
-            candidates.append(output_dir / "Tables" / relative_parent / result_name)
+            candidates.append(output_dir / "Tables" / relative_parent / csv_name)
         if output_dir.exists():
-            candidates.extend(sorted(output_dir.rglob(result_name)))
+            recursive_matches = sorted(output_dir.rglob(csv_name))
+            # Only use a broad recursive fallback when it is unambiguous. A job
+            # can contain multiple workflow subdirectories with identically named
+            # CSVs; picking the first one would silently attach the wrong data.
+            if len(recursive_matches) == 1:
+                candidates.extend(recursive_matches)
 
     seen: set[str] = set()
     for candidate in candidates:
@@ -366,6 +361,73 @@ def companion_result_csv(trajectory_path: Path, job: dict | None) -> Path | None
         if candidate.exists() and candidate.is_file():
             return candidate
     return None
+
+
+def trajectory_role(path: Path, job: dict | None = None) -> str:
+    """Return the analysis role used by the Chemiscope filter and CSV resolver."""
+    name = path.name.lower()
+    stem = path.stem.lower()
+    if stem == "init_path":
+        if find_companion_csv(path, job, "mfscan_trace.csv") is not None:
+            return "MF-SCAN"
+        return "Initial path"
+    if stem == "irc":
+        return "IRC"
+    if stem == "optpoints":
+        return "Optpoints"
+    if name.endswith("_tsopt.traj") or name.endswith("_tsopt.xyz"):
+        return "TS optimization"
+    if name.endswith("_opt.traj") or name.endswith("_opt.xyz"):
+        return "Optimization"
+    return "Other"
+
+
+def companion_csv_names(role: str, job: dict | None) -> list[tuple[str, str]]:
+    """Return ordered companion CSV kinds/names for a trajectory role."""
+    if role == "Initial path":
+        return [("frame", expected_result_name(job))]
+    if role == "IRC":
+        return [("frame", "irc_energy.csv")]
+    if role == "Optpoints":
+        return [("frame", "result_optpoints.csv")]
+    if role == "MF-SCAN":
+        return [
+            ("frame", expected_result_name(job)),
+            ("mfscan", "mfscan_trace.csv"),
+        ]
+    return []
+
+
+def companion_csv_sources(
+    trajectory_path: Path,
+    job: dict | None,
+    role: str,
+) -> list[dict[str, object]]:
+    """Resolve all companion CSVs expected for one trajectory role."""
+    sources: list[dict[str, object]] = []
+    for kind, csv_name in companion_csv_names(role, job):
+        sources.append(
+            {
+                "kind": kind,
+                "name": csv_name,
+                "path": find_companion_csv(trajectory_path, job, csv_name),
+            }
+        )
+    return sources
+
+
+def prepare_mfscan_frame_properties(trace_df: pd.DataFrame) -> pd.DataFrame:
+    """Reduce an MF-SCAN trace to rows that correspond to DFT output frames."""
+    if "init_path_frame" not in trace_df.columns:
+        raise ValueError("MF-SCAN trace is missing `init_path_frame`.")
+    result = trace_df.copy()
+    frame_values = pd.to_numeric(result["init_path_frame"], errors="coerce")
+    valid = np.isfinite(frame_values.to_numpy(dtype=float))
+    result = result.loc[valid].copy()
+    if result.empty:
+        raise ValueError("MF-SCAN trace contains no DFT anchor frame mapping.")
+    result["# image"] = frame_values.loc[valid].astype(int)
+    return result
 
 
 def property_source_label(
@@ -382,10 +444,6 @@ def property_source_label(
         return result_csv.relative_to(trajectory_path.parent).as_posix()
     except ValueError:
         return result_csv.name
-
-
-def expected_result_name(job: dict | None) -> str:
-    return Path(str((job or {}).get("result_name") or "result.csv")).name
 
 
 def numeric_columns(df: pd.DataFrame) -> list[str]:
@@ -514,48 +572,68 @@ if files_df.empty:
     st.info(t('No trajectory files were found in the selected jobs.'))
     st.stop()
 
-filter_key = f"{session_id}_chemiscope_traj_filter_{'-'.join(selected_job_ids)}"
-selected_filter = st.segmented_control(
-    t('Filename filter'),
-    options=list(TRAJECTORY_FILTERS),
-    default="*.traj",
-    key=filter_key,
-)
-filtered_files_df = filter_trajectory_files(files_df, str(selected_filter or "*.traj"))
-
-if filtered_files_df.empty:
-    st.info(t('No trajectory files match this filter.'))
-    st.stop()
-
-prepared_files_df = filtered_files_df.copy()
+prepared_files_df = files_df.copy()
 prepared_files_df["job_id"] = prepared_files_df["rel_path"].map(trajectory_job_id)
 prepared_files_df["trajectory"] = prepared_files_df["rel_path"].map(trajectory_path_within_job)
-prepared_files_df["role"] = prepared_files_df["path"].map(lambda value: trajectory_role(Path(str(value))))
 prepared_files_df["size"] = prepared_files_df["path"].map(
     lambda value: file_size_label(Path(str(value)))
 )
 
+roles: list[str] = []
+companion_sources_column: list[list[dict[str, object]]] = []
 property_sources: list[str] = []
 for _, file_row in prepared_files_df.iterrows():
     trajectory_path = Path(str(file_row["path"]))
     job_id = str(file_row["job_id"] or "")
     job = jobs_by_id.get(job_id)
-    result_csv = companion_result_csv(trajectory_path, job)
-    if result_csv is not None:
-        property_sources.append(property_source_label(result_csv, trajectory_path, job))
-    elif trajectory_path.name == "init_path.traj":
-        property_sources.append(f"{expected_result_name(job)} (missing)")
-    else:
-        property_sources.append("-")
+    role = trajectory_role(trajectory_path, job)
+    companion_sources = companion_csv_sources(trajectory_path, job, role)
+    labels: list[str] = []
+    for source in companion_sources:
+        source_path = source.get("path")
+        if isinstance(source_path, Path):
+            labels.append(property_source_label(source_path, trajectory_path, job))
+        else:
+            labels.append(f"{source.get('name', 'CSV')} (missing)")
+    roles.append(role)
+    companion_sources_column.append(companion_sources)
+    property_sources.append(" + ".join(labels) if labels else "-")
+
+prepared_files_df["role"] = roles
+prepared_files_df["companion_sources"] = companion_sources_column
 prepared_files_df["property_source"] = property_sources
 
+available_roles = [
+    role
+    for role in TRAJECTORY_ROLE_FILTERS
+    if role == "All trajectories" or role in set(prepared_files_df["role"].astype(str))
+]
+filter_key = f"{session_id}_chemiscope_role_filter_{'-'.join(selected_job_ids)}"
+selected_filter = st.segmented_control(
+    "Trajectory filter",
+    options=available_roles,
+    default="All trajectories",
+    key=filter_key,
+)
+st.caption(
+    "Tip: Filters also control companion CSV loading "
+    "(e.g. `init_path.traj` → `result.csv`)."
+)
+
+prepared_files_df = filter_trajectory_files(
+    prepared_files_df,
+    str(selected_filter or "All trajectories"),
+)
+
+if prepared_files_df.empty:
+    st.info(t('No trajectory files match this filter.'))
+    st.stop()
+
 st.markdown("#### Found trajectory files")
-st.caption(tf(
-    "Files matching `{filter_name}`: {count:,}",
-    filter_name=selected_filter,
-    count=len(prepared_files_df),
-))
-if include_xyz and selected_filter == "*.traj":
+st.caption(
+    f"Role `{selected_filter or 'All trajectories'}`: {len(prepared_files_df):,} file(s)"
+)
+if include_xyz and selected_filter == "All trajectories":
     st.caption(t('XYZ and extxyz files are also shown because Include XYZ is enabled.'))
 
 selection_signature = hashlib.sha1(
@@ -625,6 +703,9 @@ if st.session_state.get(join_context_key) != selection_kind:
     st.session_state[join_points_key] = selection_kind == "single"
     st.session_state[join_context_key] = selection_kind
 
+series_rows = selected_series_rows(selected_file_rows, jobs_by_id)
+series_label_by_source: dict[str, str] = {}
+
 with st.container(border=True):
     multi_trajectory = len(selected_file_rows) > 1
     view_cols = st.columns([1, 1, 1, 1] if multi_trajectory else [1, 1, 1])
@@ -671,71 +752,69 @@ with st.container(border=True):
             "trajectory will also connect to the first frame of the next trajectory."
         )
 
-series_rows = selected_series_rows(selected_file_rows, jobs_by_id)
-series_label_by_source: dict[str, str] = {}
-if len(series_rows) > 1:
-    label_mode_key = f"{session_id}_chemiscope_series_label_mode_v2"
-    label_mode = st.selectbox(
-        "Series label",
-        options=list(SERIES_LABEL_OPTIONS),
-        index=0,
-        key=label_mode_key,
-        help=(
-            "Controls the label used for Quick plot series and the Chemiscope "
-            "symbol property. Compact note uses the first Job Note line, shortens "
-            "long text, and adds a short Job ID only when labels collide."
-        ),
-    )
-    if label_mode == "Custom":
-        compact_default_labels = compact_series_labels(series_rows)
-        selected_series_signature = hashlib.sha1(
-            "|".join(row["source"] for row in series_rows).encode("utf-8")
-        ).hexdigest()[:12]
-        custom_rows = pd.DataFrame(
-            [
-                {
-                    "Job": row["job_id"],
-                    "Job Note": row["job_note"],
-                    "Trajectory": row["trajectory"],
-                    "Label": compact_default_labels[row["source"]],
-                }
-                for row in series_rows
-            ]
+    if len(series_rows) > 1:
+        label_mode_key = f"{session_id}_chemiscope_series_label_mode_v2"
+        label_mode = st.selectbox(
+            "Series label",
+            options=list(SERIES_LABEL_OPTIONS),
+            index=0,
+            key=label_mode_key,
+            help=(
+                "Controls the label used for Quick plot series and the Chemiscope "
+                "symbol property. Compact note uses the first Job Note line, shortens "
+                "long text, and adds a short Job ID only when labels collide."
+            ),
         )
-        edited_rows = st.data_editor(
-            custom_rows,
-            hide_index=True,
-            width="stretch",
-            height=min(260, 36 + 35 * len(custom_rows)),
-            disabled=["Job", "Job Note", "Trajectory"],
-            num_rows="fixed",
-            key=f"{session_id}_chemiscope_custom_series_labels_{selected_series_signature}",
-            column_config={
-                "Job": st.column_config.TextColumn("Job", width="medium"),
-                "Job Note": st.column_config.TextColumn("Job Note", width="large"),
-                "Trajectory": st.column_config.TextColumn("Trajectory", width="large"),
-                "Label": st.column_config.TextColumn("Label", width="large"),
-            },
-        )
-        for row, (_, edited_row) in zip(series_rows, edited_rows.iterrows(), strict=True):
-            label_value = edited_row.get("Label")
-            custom_label = "" if pd.isna(label_value) else str(label_value).strip()
-            series_label_by_source[row["source"]] = (
-                custom_label or compact_default_labels[row["source"]]
+        if label_mode == "Custom":
+            compact_default_labels = compact_series_labels(series_rows)
+            selected_series_signature = hashlib.sha1(
+                "|".join(row["source"] for row in series_rows).encode("utf-8")
+            ).hexdigest()[:12]
+            custom_rows = pd.DataFrame(
+                [
+                    {
+                        "Job": row["job_id"],
+                        "Job Note": row["job_note"],
+                        "Trajectory": row["trajectory"],
+                        "Label": compact_default_labels[row["source"]],
+                    }
+                    for row in series_rows
+                ]
             )
-    elif label_mode == "Compact note":
-        series_label_by_source = compact_series_labels(series_rows)
+            edited_rows = st.data_editor(
+                custom_rows,
+                hide_index=True,
+                width="stretch",
+                height=min(260, 36 + 35 * len(custom_rows)),
+                disabled=["Job", "Job Note", "Trajectory"],
+                num_rows="fixed",
+                key=f"{session_id}_chemiscope_custom_series_labels_{selected_series_signature}",
+                column_config={
+                    "Job": st.column_config.TextColumn("Job", width="medium"),
+                    "Job Note": st.column_config.TextColumn("Job Note", width="large"),
+                    "Trajectory": st.column_config.TextColumn("Trajectory", width="large"),
+                    "Label": st.column_config.TextColumn("Label", width="large"),
+                },
+            )
+            for row, (_, edited_row) in zip(series_rows, edited_rows.iterrows(), strict=True):
+                label_value = edited_row.get("Label")
+                custom_label = "" if pd.isna(label_value) else str(label_value).strip()
+                series_label_by_source[row["source"]] = (
+                    custom_label or compact_default_labels[row["source"]]
+                )
+        elif label_mode == "Compact note":
+            series_label_by_source = compact_series_labels(series_rows)
+        else:
+            for row in series_rows:
+                series_label_by_source[row["source"]] = series_label_for_source(
+                    str(label_mode),
+                    job_id=row["job_id"],
+                    job_note=row["job_note"],
+                    source=row["source"],
+                )
     else:
-        for row in series_rows:
-            series_label_by_source[row["source"]] = series_label_for_source(
-                str(label_mode),
-                job_id=row["job_id"],
-                job_note=row["job_note"],
-                source=row["source"],
-            )
-else:
-    only_row = series_rows[0]
-    series_label_by_source[only_row["source"]] = only_row["source"]
+        only_row = series_rows[0]
+        series_label_by_source[only_row["source"]] = only_row["source"]
 
 all_structures: list = []
 frame_tables: list[pd.DataFrame] = []
@@ -770,31 +849,43 @@ for _, selected_row in selected_file_rows.iterrows():
         st.stop()
 
     local_table = build_frame_table(structures)
-    result_csv = companion_result_csv(selected_path, job)
-    property_source = "-"
-    if result_csv is not None:
+    selected_role = str(selected_row.get("role") or trajectory_role(selected_path, job))
+    companion_sources = selected_row.get("companion_sources")
+    if not isinstance(companion_sources, list):
+        companion_sources = companion_csv_sources(selected_path, job, selected_role)
+
+    source_labels: list[str] = []
+    for companion in companion_sources:
+        csv_name = str(companion.get("name") or "CSV")
+        csv_kind = str(companion.get("kind") or "frame")
+        csv_path = companion.get("path")
+        if not isinstance(csv_path, Path):
+            source_labels.append(f"{csv_name} (missing)")
+            property_messages.append(
+                f"`{job_id}/{selected_path.name}`: `{csv_name}` was not found for "
+                f"the {selected_role} role; trajectory metadata is still available."
+            )
+            continue
+
         try:
-            csv_stat = result_csv.stat()
-            result_df = load_frame_properties_csv(
-                str(result_csv),
+            csv_stat = csv_path.stat()
+            properties_df = load_frame_properties_csv(
+                str(csv_path),
                 int(csv_stat.st_mtime_ns),
                 int(csv_stat.st_size),
             )
-            local_table, added_columns = merge_frame_properties(local_table, result_df)
+            if csv_kind == "mfscan":
+                properties_df = prepare_mfscan_frame_properties(properties_df)
+            local_table, added_columns = merge_frame_properties(local_table, properties_df)
             csv_fields.update(added_columns)
-            property_source = property_source_label(result_csv, selected_path, job)
+            source_labels.append(property_source_label(csv_path, selected_path, job))
         except Exception as error:
-            property_source = f"{result_csv.name} (error)"
+            source_labels.append(f"{csv_name} (error)")
             property_messages.append(
-                f"`{job_id}/{selected_path.name}`: failed to load `{result_csv.name}` ({error})"
+                f"`{job_id}/{selected_path.name}`: failed to load `{csv_name}` ({error})"
             )
-    elif selected_path.name == "init_path.traj":
-        missing_name = expected_result_name(job)
-        property_source = f"{missing_name} (missing)"
-        property_messages.append(
-            f"`{job_id}/{selected_path.name}`: `{missing_name}` was not found; "
-            "trajectory metadata is still available."
-        )
+
+    property_source = " + ".join(source_labels) if source_labels else "-"
 
     inside_job = trajectory_path_within_job(rel_path)
     source_label = f"{job_id}/{inside_job}" if job_id else rel_path
