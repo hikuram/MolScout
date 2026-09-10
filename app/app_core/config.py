@@ -8,6 +8,10 @@ from pathlib import Path
 from .paths import CORE_DIR
 
 
+APP_VERSION = "0.4.3"
+REPOSITORY_URL = "https://github.com/hikuram/MolScout/"
+
+
 def _load_core_default(name: str, fallback):
     spec = importlib.util.spec_from_file_location("core_default_config", CORE_DIR / "default_config.py")
     if spec is None or spec.loader is None:

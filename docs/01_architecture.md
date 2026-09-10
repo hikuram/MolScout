@@ -40,7 +40,15 @@ Each run records operational messages and configuration values in `molscout.log`
 
 The result CSV is the main tabular output. Additional outputs such as trajectory splits, figures, JSON exports, and Molden files are generated when the corresponding stage and backend are enabled.
 
-## 6. High-level workflow
+## 6. Application review layer
+
+The Streamlit review layer combines PostgreSQL session/job metadata with file outputs stored in each job directory. Multi-job selections are shared by the Database sidebar across Results / Chemiscope / Data. When `Refresh` is pressed, the current selection can be serialized into the Share URL through `db_session`, Target Job `db_job`, and repeated `db_jobs` values.
+
+Chemiscope does not rewrite trajectory files. It resolves companion CSV files by trajectory role and merges compatible frame-level properties for review. The main mappings are Initial path -> `result.csv`, IRC -> `irc_energy.csv`, Optpoints -> `result_optpoints.csv`, and MF-SCAN -> `result.csv` plus DFT-anchor rows from `mfscan_trace.csv`. Multiple scans can also expose a common SCAN property when the coordinate type is the same.
+
+This layer is intended for result interpretation and comparison while leaving the original trajectories, CSV files, and catalog metadata unchanged.
+
+## 7. High-level workflow
 
 ```mermaid
 flowchart TD

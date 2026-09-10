@@ -616,8 +616,10 @@ selected_filter = st.segmented_control(
     key=filter_key,
 )
 st.caption(
-    "Tip: Filters also control companion CSV loading "
-    "(e.g. `init_path.traj` → `result.csv`)."
+    t(
+        "Tip: Filters also control companion CSV loading "
+        "(e.g. `init_path.traj` → `result.csv`)."
+    )
 )
 
 prepared_files_df = filter_trajectory_files(
@@ -690,7 +692,7 @@ selected_indices = [
     if isinstance(index, int) and 0 <= index < len(prepared_files_df)
 ]
 if not selected_indices:
-    st.info("Select one or more trajectory rows to visualize.")
+    st.info(t("Select one or more trajectory rows to visualize."))
     st.stop()
 
 selected_file_rows = prepared_files_df.iloc[selected_indices].reset_index(drop=True)
@@ -712,7 +714,7 @@ with st.container(border=True):
     join_points = view_cols[0].toggle(
         "Join points",
         key=join_points_key,
-        help=(
+        help=t(
             "For multiple trajectories this is disabled by default. Enabling it "
             "connects points in dataset order, including the boundary between sources."
         ),
@@ -739,7 +741,7 @@ with st.container(border=True):
             view_cols[3].toggle(
                 "Unify SCAN targets",
                 key=unify_scan_key,
-                help=(
+                help=t(
                     "Treat different atom-index targets as one comparison axis when "
                     "all selected trajectories use the same coordinate type. Bond, "
                     "angle, and dihedral scans are never mixed."
@@ -748,8 +750,10 @@ with st.container(border=True):
         )
     if len(selected_file_rows) > 1 and join_points:
         st.caption(
-            "Join points is enabled for a combined dataset; the last frame of one "
-            "trajectory will also connect to the first frame of the next trajectory."
+            t(
+                "Join points is enabled for a combined dataset; the last frame of one "
+                "trajectory will also connect to the first frame of the next trajectory."
+            )
         )
 
     if len(series_rows) > 1:
@@ -759,7 +763,7 @@ with st.container(border=True):
             options=list(SERIES_LABEL_OPTIONS),
             index=0,
             key=label_mode_key,
-            help=(
+            help=t(
                 "Controls the label used for Quick plot series and the Chemiscope "
                 "symbol property. Compact note uses the first Job Note line, shortens "
                 "long text, and adds a short Job ID only when labels collide."
@@ -1088,8 +1092,10 @@ with right:
 st.markdown("#### Structure viewer")
 if len(loaded_trajectories) > 1:
     st.caption(
-        "Combined comparisons open with one structure viewer. Additional structures "
-        "can still be pinned in Chemiscope when a multi-view comparison is useful."
+        t(
+            "Combined comparisons open with one structure viewer. Additional structures "
+            "can still be pinned in Chemiscope when a multi-view comparison is useful."
+        )
     )
 
 # Prefer the selected Target Job for the initial viewer, but keep a single pin
