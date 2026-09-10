@@ -50,13 +50,16 @@ SCAN_UNIFIED_COLUMNS = {
 }
 
 SERIES_LABEL_OPTIONS = (
-    "Job Note + Job ID",
-    "Job ID + Job Note",
+    "Compact note",
     "Job Note",
     "Job ID",
+    "Job Note + Job ID",
+    "Job ID + Job Note",
     "Source path",
     "Custom",
 )
+
+COMPACT_NOTE_MAX_CHARS = 28
 
 
 def scan_column_kind(column: str) -> tuple[str, str] | None:
@@ -162,6 +165,24 @@ def unify_scan_target_columns(
     return result, unified_column, detail
 
 
+def compact_note_text(note: str, max_chars: int = COMPACT_NOTE_MAX_CHARS) -> str:
+    """Return a short, single-line note suitable for plot legends."""
+    first_line = str(note or "").strip().splitlines()[0] if str(note or "").strip() else ""
+    compact = " ".join(first_line.split())
+    if len(compact) <= max_chars:
+        return compact
+    if max_chars <= 1:
+        return compact[:max_chars]
+    return compact[: max_chars - 1].rstrip() + "…"
+
+
+def short_job_tag(job_id: str) -> str:
+    """Return a compact stable identifier for duplicate legend labels."""
+    text = str(job_id or "-").strip() or "-"
+    first = text.split("-", 1)[0]
+    return first if first else text[:12]
+
+
 def series_label_for_source(
     mode: str,
     *,
@@ -173,6 +194,8 @@ def series_label_for_source(
     job_id = str(job_id or "-")
     job_note = str(job_note or "").strip()
     source = str(source or job_id)
+    if mode == "Compact note":
+        return compact_note_text(job_note) or job_id
     if mode == "Job ID":
         return job_id
     if mode == "Job Note":
@@ -181,8 +204,47 @@ def series_label_for_source(
         return f"{job_id} | {job_note}" if job_note else job_id
     if mode == "Source path":
         return source
-    # Default and Custom seed: Note first, then the stable Job ID.
-    return f"{job_note} | {job_id}" if job_note else job_id
+    # Custom uses Compact note as its initial seed.
+    return compact_note_text(job_note) or job_id
+
+
+def compact_series_labels(rows: list[dict[str, str]]) -> dict[str, str]:
+    """Build concise labels and disambiguate collisions without long legends."""
+    bases = {
+        row["source"]: series_label_for_source(
+            "Compact note",
+            job_id=row["job_id"],
+            job_note=row["job_note"],
+            source=row["source"],
+        )
+        for row in rows
+    }
+
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for row in rows:
+        grouped.setdefault(bases[row["source"]], []).append(row)
+
+    labels: dict[str, str] = {}
+    for base, members in grouped.items():
+        if len(members) == 1:
+            labels[members[0]["source"]] = base
+            continue
+
+        job_candidates = [f"{base} [{short_job_tag(row['job_id'])}]" for row in members]
+        if len(set(job_candidates)) == len(job_candidates):
+            for row, label in zip(members, job_candidates, strict=True):
+                labels[row["source"]] = label
+            continue
+
+        # Multiple trajectories can belong to the same job. Add only the
+        # trajectory basename in that less common case.
+        for row in members:
+            trajectory_tag = Path(row["trajectory"]).stem
+            labels[row["source"]] = (
+                f"{base} [{short_job_tag(row['job_id'])}:{trajectory_tag}]"
+            )
+
+    return labels
 
 
 def selected_series_rows(
@@ -612,7 +674,7 @@ with st.container(border=True):
 series_rows = selected_series_rows(selected_file_rows, jobs_by_id)
 series_label_by_source: dict[str, str] = {}
 if len(series_rows) > 1:
-    label_mode_key = f"{session_id}_chemiscope_series_label_mode"
+    label_mode_key = f"{session_id}_chemiscope_series_label_mode_v2"
     label_mode = st.selectbox(
         "Series label",
         options=list(SERIES_LABEL_OPTIONS),
@@ -620,10 +682,12 @@ if len(series_rows) > 1:
         key=label_mode_key,
         help=(
             "Controls the label used for Quick plot series and the Chemiscope "
-            "symbol property. Empty Job Notes fall back to Job ID."
+            "symbol property. Compact note uses the first Job Note line, shortens "
+            "long text, and adds a short Job ID only when labels collide."
         ),
     )
     if label_mode == "Custom":
+        compact_default_labels = compact_series_labels(series_rows)
         selected_series_signature = hashlib.sha1(
             "|".join(row["source"] for row in series_rows).encode("utf-8")
         ).hexdigest()[:12]
@@ -633,12 +697,7 @@ if len(series_rows) > 1:
                     "Job": row["job_id"],
                     "Job Note": row["job_note"],
                     "Trajectory": row["trajectory"],
-                    "Label": series_label_for_source(
-                        "Job Note + Job ID",
-                        job_id=row["job_id"],
-                        job_note=row["job_note"],
-                        source=row["source"],
-                    ),
+                    "Label": compact_default_labels[row["source"]],
                 }
                 for row in series_rows
             ]
@@ -661,12 +720,11 @@ if len(series_rows) > 1:
         for row, (_, edited_row) in zip(series_rows, edited_rows.iterrows(), strict=True):
             label_value = edited_row.get("Label")
             custom_label = "" if pd.isna(label_value) else str(label_value).strip()
-            series_label_by_source[row["source"]] = custom_label or series_label_for_source(
-                "Job Note + Job ID",
-                job_id=row["job_id"],
-                job_note=row["job_note"],
-                source=row["source"],
+            series_label_by_source[row["source"]] = (
+                custom_label or compact_default_labels[row["source"]]
             )
+    elif label_mode == "Compact note":
+        series_label_by_source = compact_series_labels(series_rows)
     else:
         for row in series_rows:
             series_label_by_source[row["source"]] = series_label_for_source(
@@ -681,7 +739,6 @@ else:
 
 all_structures: list = []
 frame_tables: list[pd.DataFrame] = []
-source_starts: list[int] = []
 loaded_trajectories: list[dict] = []
 csv_fields: set[str] = set()
 property_messages: list[str] = []
@@ -762,7 +819,6 @@ for _, selected_row in selected_file_rows.iterrows():
     ]
     local_table = local_table[[*metadata_columns, *remaining_columns]]
 
-    source_starts.append(offset)
     all_structures.extend(structures)
     frame_tables.append(local_table)
     loaded_trajectories.append(
@@ -773,6 +829,7 @@ for _, selected_row in selected_file_rows.iterrows():
             "mtime_ns": int(selected_row["mtime_ns"]),
             "size_bytes": int(selected_row["size_bytes"]),
             "frames": len(structures),
+            "start_index": offset,
             "property_source": property_source,
             "series_label": series_label_by_source.get(source_label, source_label),
         }
@@ -846,7 +903,11 @@ with right:
     y_options = [column for column in plot_columns if column not in {"dataset_index", "natoms", "step"}]
 
     if x_options and y_options:
-        default_x = next((column for column in x_options if column.startswith("SCAN_")), "step")
+        default_x = (
+            scan_unified_column
+            if scan_unified_column in x_options
+            else next((column for column in x_options if column.startswith("SCAN_")), "step")
+        )
         if default_x not in x_options:
             default_x = x_options[0]
         default_y = next(
@@ -865,7 +926,22 @@ with right:
 
         x_key = f"{session_id}_chemiscope_x_axis"
         y_key = f"{session_id}_chemiscope_y_axis"
-        if st.session_state.get(x_key) not in x_options:
+        x_context_key = f"{session_id}_chemiscope_x_axis_context"
+        x_context = hashlib.sha1(
+            (
+                "|".join(
+                    f"{item['rel_path']}:{item['mtime_ns']}:{item['size_bytes']}"
+                    for item in loaded_trajectories
+                )
+                + f"|unify={int(bool(unify_scan_targets))}|common={scan_unified_column or '-'}"
+            ).encode("utf-8")
+        ).hexdigest()[:16]
+        if st.session_state.get(x_context_key) != x_context:
+            # A new trajectory selection or SCAN-unification state gets the most
+            # useful comparison axis once. Subsequent manual axis choices persist.
+            st.session_state[x_key] = default_x
+            st.session_state[x_context_key] = x_context
+        elif st.session_state.get(x_key) not in x_options:
             st.session_state[x_key] = default_x
         if st.session_state.get(y_key) not in y_options:
             st.session_state[y_key] = default_y
@@ -919,12 +995,28 @@ with right:
         st.info(t('No numeric energy or force properties were found in Atoms.info or arrays.'))
 
 st.markdown("#### Structure viewer")
-if len(source_starts) > 9:
+if len(loaded_trajectories) > 1:
     st.caption(
-        "Chemiscope can pin up to 9 structures initially. The first frame of the "
-        "first 9 selected trajectories will be opened in parallel viewers; all "
-        "selected frames remain in the dataset."
+        "Combined comparisons open with one structure viewer. Additional structures "
+        "can still be pinned in Chemiscope when a multi-view comparison is useful."
     )
+
+# Prefer the selected Target Job for the initial viewer, but keep a single pin
+# even when many trajectories are combined. Multi-view remains available as an
+# explicit Chemiscope interaction instead of being forced on initial load.
+initial_trajectory = next(
+    (
+        item
+        for item in loaded_trajectories
+        if item["job_id"] == focused_job_id
+        and Path(str(item["path"])).name == "init_path.traj"
+    ),
+    next(
+        (item for item in loaded_trajectories if item["job_id"] == focused_job_id),
+        loaded_trajectories[0],
+    ),
+)
+initial_pinned_indices = [int(initial_trajectory["start_index"])]
 
 try:
     import chemiscope.streamlit
@@ -940,7 +1032,7 @@ try:
         source_name=source_name,
         join_points=bool(join_points),
         playback_delay=int(playback_delay),
-        pinned_indices=source_starts,
+        pinned_indices=initial_pinned_indices,
     )
     with st.expander("Chemiscope settings", expanded=False):
         st.json(settings)
