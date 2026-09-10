@@ -21,6 +21,7 @@ def render_log_viewer(text: str, key: str, *, height: int = 300) -> None:
 <style>
 .st-key-{key} textarea:disabled {{
     cursor: text !important;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
     -webkit-text-fill-color: var(--st-text-color) !important;
     color: var(--st-text-color) !important;
 }}

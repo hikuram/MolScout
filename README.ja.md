@@ -2,6 +2,9 @@
 
 [English](README.md)
 
+Current application version: **v0.4.3**  
+Repository: <https://github.com/hikuram/MolScout/>
+
 MolScout は、反応経路探索と後続の分子計算を自動化するための Python toolkit です。初期経路生成、transition-state optimization、intrinsic reaction coordinate 計算、vibrational analysis、熱化学量評価、および任意の高精度 energy refinement を一連の workflow として扱います。
 
 本リポジトリは、共有実行用の Streamlit application と、科学計算 workflow を格納する `core/` directory を中心に構成されています。従来の個別 workflow script は整理済みであり、workflow stage の選択は application wrapper と `core/default_config.py` によって制御します。
@@ -15,6 +18,8 @@ MolScout は、反応経路探索と後続の分子計算を自動化するた�
 - OrbMol、xTB/ALPB delta correction、PySCF、gpu4pyscf 支援計算に対応した calculator backend
 - `.traj`、`.xyz`、`.csv`、log、figure などによる file-based result handoff
 - 共有 workstation または remote server での実行を想定した Streamlit queue
+- GUIを再構築せず詳細・反復設定を再利用できる JSON-based submission
+- role-based companion CSV loading、共通 SCAN 軸、compact series label、Share URL を備えた複数 job の Chemiscope 比較
 - PostgreSQL artifact catalog による session 横断の成果物検索と filesystem 整合性診断
 
 ## リポジトリ構成
@@ -135,6 +140,7 @@ PYTHONPATH=app:core python -m app_core.workflow_runner \
 - `docs/02_workflow_details.md`: workflow stage ごとの動作
 - `docs/03_calculators.md`: calculator backend notes
 - `docs/04_environment.md`: installation policy と確認済み package versions
+- `app/README.ja.md`: Streamlit application の詳細動作と利用上の注意
 
 Colab example は `colab_notebook_example.ipynb`（English）と `colab_notebook_example_ja.ipynb`（日本語補助）を用意しています。
 

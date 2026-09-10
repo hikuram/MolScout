@@ -33,6 +33,7 @@ from app_core.session_manager import (
     list_jobs,
     save_job,
 )
+from app_ui.i18n import t
 from app_ui.sidebar import get_selected_session
 from app_ui.views import (
     copy_source_file,
@@ -199,11 +200,12 @@ def load_pyscf_source(
 
 st.set_page_config(page_title="MolScout [Submit JSON]")
 st.markdown("## :material/data_object: Submit (JSON)")
-st.caption("Load a MolScout JSON configuration, attach its input structures, and submit a new job.")
+st.caption(t("Load a MolScout JSON configuration, attach its input structures, and submit a new job."))
+st.caption(t("Use this page when detailed or reusable settings are easier to preserve as JSON than to rebuild in the GUI."))
 
 session = get_selected_session()
 if not session:
-    st.info("Create or select a session from the sidebar first.")
+    st.info(t("Create or select a session from the sidebar first."))
     st.stop()
 
 session_id = session["session_id"]
@@ -233,7 +235,7 @@ if source_mode == "Upload JSON":
 else:
     source_jobs = available_source_jobs(session_id)
     if not source_jobs:
-        st.info("No existing job contains a reusable JSON configuration.")
+        st.info(t("No existing job contains a reusable JSON configuration."))
         st.stop()
     labels = {
         str(job["job_id"]): f"{job['job_id']} | {job.get('name', '')} | {job.get('status', '')}"
@@ -254,7 +256,7 @@ else:
         st.caption(f"Configuration: `{config_path.relative_to(source_job_root)}`")
 
 if config_bytes is None:
-    st.info("Load a JSON configuration to continue.")
+    st.info(t("Load a JSON configuration to continue."))
     st.stop()
 
 try:
@@ -271,12 +273,12 @@ source_identity = (
 )
 source_token = hashlib.sha256(source_identity).hexdigest()[:12]
 st.success(f"Configuration loaded: `{config_original_name}`")
-st.dataframe(configuration_summary(config), hide_index=True, use_container_width=True)
+st.dataframe(configuration_summary(config), hide_index=True, width="stretch")
 
 with st.expander("Parsed configuration", expanded=False):
     st.json(config)
 
-st.caption("Parsed values will override the current defaults for new jobs in this session.")
+st.caption(t("Parsed values will override the current defaults for new jobs in this session."))
 if st.button(
     "Set as session defaults",
     key=f"{session_id}_{source_token}_set_json_defaults",
@@ -336,9 +338,9 @@ st.markdown("### Input structures")
 if source_mode == "Existing job" and source_job is not None:
     source_inputs = existing_input_records(session_id, source_job, mode)
     if source_inputs:
-        st.dataframe(input_preview_rows(source_inputs), hide_index=True, use_container_width=True)
+        st.dataframe(input_preview_rows(source_inputs), hide_index=True, width="stretch")
     else:
-        st.warning("No reusable input structure was found in the selected job.")
+        st.warning(t("No reusable input structure was found in the selected job."))
 elif mode == "reactant_product":
     cols = st.columns(2)
     reactant_file = cols[0].file_uploader(
@@ -350,7 +352,7 @@ elif mode == "reactant_product":
         "Product structure",
         type=["xyz"],
         key=f"{session_id}_{source_token}_json_submit_product",
-        help="Optional for SCAN configurations.",
+        help=t("Optional for SCAN configurations."),
     )
     preview_records = []
     if reactant_file is not None:
@@ -358,7 +360,7 @@ elif mode == "reactant_product":
     if product_file is not None:
         preview_records.append({"role": "product", "original_name": product_file.name})
     if preview_records:
-        st.dataframe(input_preview_rows(preview_records), hide_index=True, use_container_width=True)
+        st.dataframe(input_preview_rows(preview_records), hide_index=True, width="stretch")
 elif mode == "single_input":
     input_file = st.file_uploader(
         "Input structure or trajectory",
@@ -369,7 +371,7 @@ elif mode == "single_input":
         st.dataframe(
             input_preview_rows([{"role": "input", "original_name": input_file.name}]),
             hide_index=True,
-            use_container_width=True,
+            width="stretch",
         )
 else:
     cat_files = st.file_uploader(
@@ -383,7 +385,7 @@ else:
             {"role": f"input_{index:03d}", "original_name": uploaded.name}
             for index, uploaded in enumerate(cat_files, start=1)
         ]
-        st.dataframe(input_preview_rows(preview_records), hide_index=True, use_container_width=True)
+        st.dataframe(input_preview_rows(preview_records), hide_index=True, width="stretch")
 
 submitted = st.button(
     "Submit",

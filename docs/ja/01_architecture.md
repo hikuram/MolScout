@@ -40,7 +40,15 @@ MolScout は metadata と calculation files を分離した hybrid persistence m
 
 result CSV は主要な tabular output です。trajectory split、figures、JSON exports、Molden files などの追加 output は、対応する stage と backend が有効な場合に生成されます。
 
-## 6. High-level workflow
+## 6. Application review layer
+
+Streamlit app の review layer は、PostgreSQL に保存した session/job metadata と job directory 内の file outputs を組み合わせて動作します。Results / Chemiscope / Data で選択した複数 job は Database sidebar で共有され、`Refresh` 実行時に `db_session`、Target Job の `db_job`、複数値の `db_jobs` として Share URL に確定できます。
+
+Chemiscope は trajectory file 自体を書き換えず、trajectory role に応じて companion CSV を読み込み、frame-level property として統合します。主な対応は Initial path -> `result.csv`、IRC -> `irc_energy.csv`、Optpoints -> `result_optpoints.csv`、MF-SCAN -> `result.csv` + `mfscan_trace.csv` のDFT anchor対応行です。複数SCANでは同じ coordinate type に限って共通SCAN propertyを生成できます。
+
+この層は計算結果の再解釈・比較を目的としており、元の trajectory / CSV と catalog metadata は変更しません。
+
+## 7. High-level workflow
 
 ```mermaid
 flowchart TD

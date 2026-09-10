@@ -2,7 +2,18 @@
 
 [English](README.md)
 
+Current application version: **v0.4.3**  
+Repository: <https://github.com/hikuram/MolScout/>
+
 `app/` directory には、MolScout job の投入、queue 管理、monitoring、停止、archive 作成を行う Streamlit front end が含まれます。本 application は共有 remote use を想定しており、単一の worker が queued calculations を順番に実行します。
+
+## v0.4.3 highlights
+
+- Database sidebar の複数 job 選択と Share URL を追加し、Results / Chemiscope / Data で選択状態を再現しやすくしました。
+- Chemiscope を複数 trajectory 比較へ拡張し、role-based companion CSV、共通 SCAN 軸、Quick plot、compact series label を統合しました。
+- 複数trajectory比較の初期structure viewerは1つとし、multi-viewは必要時に Chemiscope 上で追加pinする方針へ整理しました。
+- sidebar は複数job操作の配置、Job Note表示、Disk表示を整理しました。
+- About page に application version、repository、用途、注意事項を追加しました。
 
 ## 実行モデル
 
@@ -16,6 +27,7 @@
 ## App の対象範囲
 
 - full、IRC-only、VIB-only、figure-refresh、concatenation/batch workflow を 1 つの UI から投入できます。
+- `Submit (JSON)` では、uploadしたJSONまたは既存jobから詳細・反復設定を再利用して投入できます。
 - workflow-stage toggle と calculation settings を job ごとに設定できます。
 - 新規 structure の upload、bundled sample input の利用、既存 session file の再利用に対応します。
 - queue status、job log、server resources、NVIDIA GPU status を確認できます。
@@ -49,11 +61,12 @@
 
 - `Queue`: 共有キューと選択中セッションの概要を表示します。
 - `Submit`: 反応経路探索とファイル連結処理の job を投入します。
+- `Submit (JSON)`: MolScout の詳細設定を JSON から読み込み、対応する input structure を指定・再利用して投入します。
 - `Results`: セッション内 job、ログ、結果ファイル、ZIP download を確認します。
-- `Chemiscope`: 選択中セッション内の `.traj` / `.xyz` / `.extxyz` を chemiscope で可視化します。
+- `Chemiscope`: 選択した1件以上の job について trajectory と対応する companion CSV property を比較します。
 - `Data`: 全セッションの成果物検索、再スキャン、DB/filesystem 整合性診断を行います。
 - `PySCF`: 選択中セッションの PySCF 設定を編集します。
-- `About`: application overview と page guide を表示します。
+- `About`: application version、repository、用途、注意事項、page guide を表示します。
 
 セッション作成・選択、monitoring、環境チェック、サンプル一覧、worker log は全 page 共通の sidebar にあります。Cleanup control は PostgreSQL 移行中のため無効化しています。Application title panel は通常操作画面から外し、About page にのみ配置しています。
 
@@ -80,6 +93,33 @@ streamlit run app/streamlit_app.py
 ```bash
 streamlit run app/streamlit_app_ja.py
 ```
+
+## Submit (JSON)
+
+`Submit (JSON)` は、GUIで再構築するより JSON として保持・確認・再利用しやすい詳細設定向けの route です。JSON file の直接 upload に加え、既存 job に保存された configuration を再利用できます。読み込んだ configuration は投入前に summary を表示し、必要であれば選択中 session の今後の defaults として反映できます。
+
+input の指定方法は configuration の workflow mode に従います。reactant/product workflow では対応する structure、single-input workflow では XYZ または trajectory、concatenation workflow では複数 structure / trajectory を指定します。PySCF settings は current session、利用可能なら source job、または uploadした `pyscf_config.json` から選択できます。投入時の科学的 validation は通常GUIと同様に適用されます。
+
+## Chemiscope comparison workflow
+
+Chemiscope page は単なる trajectory viewer ではなく、複数結果の比較・確認用 surface として扱います。Database sidebar で1件以上の job を選択し、page 上で1件以上の trajectory row を選択します。複数 trajectory は1つの Chemiscope dataset に統合しつつ、`job`、`source`、`trajectory`、frame index、表示用 `series_label` を保持します。
+
+Trajectory filter は compatible companion CSV の読み込みも制御します。
+
+| Role | 代表trajectory | Companion CSV properties |
+|---|---|---|
+| Initial path | `init_path.traj` | `result.csv` |
+| IRC | IRC trajectory | `irc_energy.csv` |
+| Optpoints | `optpoints.traj` | `result_optpoints.csv` |
+| MF-SCAN | `init_path.traj` | `result.csv` + `mfscan_trace.csv` のDFT anchor対応行 |
+
+複数SCANでは `Unify SCAN targets` を既定でONにします。jobごとに原子indexが異なっても同じ coordinate type なら共通軸として比較できますが、bond / angle / dihedral は混在させません。共通SCAN property が得られた場合、Quick plot の初期X軸ではこれを優先します。Quick plot は long format のまま系列を分けるため、系列間で実測SCAN座標がわずかに異なっていても表示できます。
+
+系列名の既定は `Compact note` です。Job Note の先頭行を短縮し、labelが重複した場合のみ短い Job ID を加えます。完全な Job Note、Job IDとの結合、source path、Custom編集も選択できます。
+
+複数trajectory比較でも初期structure viewerは1つだけ表示します。必要なstructureは Chemiscope 上で追加pinしてmulti-viewにできます。複数trajectoryでは `Join points` を既定でOFFにします。ONにすると、combined dataset 内でsource境界も含めて点が接続されることに注意してください。
+
+Results / Chemiscope / Data では、sidebar の `Refresh` を押した時点で複数job選択状態をURLへ確定します。その直下の code block に canonical Share URL を表示するので、標準copy controlから session、Target Job、選択job集合を含むURLを共有できます。
 
 ## Notes
 

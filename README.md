@@ -2,6 +2,9 @@
 
 [日本語](README.ja.md)
 
+Current application version: **v0.4.3**  
+Repository: <https://github.com/hikuram/MolScout/>
+
 MolScout is a Python toolkit for automating reaction-path searches and follow-up molecular calculations. It treats initial-path generation, transition-state optimization, intrinsic reaction coordinate calculations, vibrational analysis, thermochemical evaluation, and optional high-level energy refinement as a connected workflow.
 
 This repository is centered on a Streamlit application for shared execution and the `core/` directory containing the scientific workflow. The earlier standalone workflow variants have been consolidated; workflow-stage selection is controlled by the application wrapper and `core/default_config.py`.
@@ -15,6 +18,8 @@ This repository is centered on a Streamlit application for shared execution and 
 - Calculator backends for OrbMol, xTB/ALPB delta correction, PySCF, and gpu4pyscf-assisted calculations
 - File-based result handoff through `.traj`, `.xyz`, `.csv`, logs, figures, and related outputs
 - A Streamlit queue designed for shared workstations or remote servers
+- JSON-based submission for reusable or advanced configurations without rebuilding settings in the GUI
+- Multi-job Chemiscope comparison with role-based companion CSV loading, common SCAN axes, compact series labels, and shareable selection URLs
 - Cross-session artifact search and filesystem consistency diagnostics through a PostgreSQL artifact catalog
 
 ## Repository layout
@@ -135,6 +140,7 @@ PYTHONPATH=app:core python -m app_core.workflow_runner \
 - `docs/02_workflow_details.md`: behavior of individual workflow stages
 - `docs/03_calculators.md`: calculator-backend notes
 - `docs/04_environment.md`: installation policy and verified package versions
+- `app/README.md`: detailed Streamlit application behavior and usage notes
 
 Japanese versions are available under `docs/ja/`. The Colab example is available in English as `colab_notebook_example.ipynb` and in Japanese-assisted form as `colab_notebook_example_ja.ipynb`.
 

@@ -2,7 +2,18 @@
 
 [日本語](README.ja.md)
 
+Current application version: **v0.4.3**  
+Repository: <https://github.com/hikuram/MolScout/>
+
 The `app/` directory contains the Streamlit front end for submitting MolScout jobs, managing the queue, monitoring runs, stopping jobs, and creating archives. The application is intended for shared remote use, with a single worker executing queued calculations sequentially.
+
+## v0.4.3 highlights
+
+- Added multi-job selection and Share URLs in the Database sidebar so Results / Chemiscope / Data selections can be reproduced more easily.
+- Expanded Chemiscope into a multi-trajectory comparison surface with role-based companion CSV loading, common SCAN axes, Quick plot, and compact series labels.
+- Combined comparisons now start with one structure viewer; multi-view remains available through manual pinning in Chemiscope.
+- Refined sidebar layout for multi-job actions, Job Note visibility, and compact Disk reporting.
+- Added application version, repository, purpose, and usage cautions to the About page.
 
 ## Execution model
 
@@ -16,6 +27,7 @@ The `app/` directory contains the Streamlit front end for submitting MolScout jo
 ## Application scope
 
 - Full, IRC-only, VIB-only, figure-refresh, and concatenation/batch workflows can be submitted from one UI.
+- Detailed or reusable MolScout configurations can be submitted from `Submit (JSON)` using an uploaded JSON file or a reusable existing job.
 - Workflow-stage toggles and calculation settings can be configured per job.
 - New structure uploads, bundled sample inputs, and reuse of existing session files are supported.
 - Queue status, job logs, server resources, and NVIDIA GPU status can be inspected.
@@ -51,11 +63,12 @@ MolScout uses one common application implementation with two thin launchers. The
 
 - `Queue`: view the shared queue and selected-session overview.
 - `Submit`: submit reaction-path searches and file-concatenation jobs.
+- `Submit (JSON)`: load detailed MolScout settings from JSON and attach/reuse the corresponding input structures.
 - `Results`: inspect session jobs, logs, result files, and ZIP downloads.
-- `Chemiscope`: visualize `.traj` / `.xyz` / `.extxyz` files for selected jobs.
+- `Chemiscope`: compare trajectories and compatible companion CSV properties across one or more selected jobs.
 - `Data`: search artifacts across sessions, rescan metadata, and diagnose DB/filesystem consistency.
 - `PySCF`: edit PySCF settings for the selected session.
-- `About`: show the application overview and page guide.
+- `About`: show the application version, repository, purpose, usage cautions, and page guide.
 
 Session creation/selection, monitoring, environment checks, sample lists, and the worker log are available from the shared sidebar. Cleanup controls are disabled during the PostgreSQL migration. The application title panel is kept on the About page rather than the routine operation pages.
 
@@ -82,6 +95,33 @@ For the Japanese-assisted UI:
 ```bash
 streamlit run app/streamlit_app_ja.py
 ```
+
+## Submit (JSON)
+
+`Submit (JSON)` is intended for configurations that are easier to preserve, review, or reuse as JSON than to rebuild from GUI controls. A configuration can be uploaded directly or reused from an existing job. MolScout parses and summarizes the configuration before submission, and the parsed values can optionally be applied as the selected session's future defaults.
+
+Input handling follows the configuration's workflow mode. Reactant/product workflows accept the corresponding structures, single-input workflows accept an XYZ or trajectory, and concatenation workflows accept multiple structures or trajectories. PySCF settings can come from the current session, the source job when available, or an uploaded `pyscf_config.json`. Scientific validation is still applied at submission time.
+
+## Chemiscope comparison workflow
+
+The Chemiscope page is a comparison and review surface rather than only a trajectory viewer. Select one or more jobs in the Database sidebar, then select one or more trajectory rows on the page. Multiple selected trajectories are combined into one Chemiscope dataset while retaining `job`, `source`, `trajectory`, frame index, and a human-readable `series_label`.
+
+The trajectory filter also controls compatible companion CSV loading:
+
+| Role | Typical trajectory | Companion CSV properties |
+|---|---|---|
+| Initial path | `init_path.traj` | `result.csv` |
+| IRC | IRC trajectory | `irc_energy.csv` |
+| Optpoints | `optpoints.traj` | `result_optpoints.csv` |
+| MF-SCAN | `init_path.traj` | `result.csv` + DFT-anchor rows from `mfscan_trace.csv` |
+
+For multiple scans, `Unify SCAN targets` is enabled by default. Atom indices may differ between jobs, but only the same coordinate type is unified: bond, angle, and dihedral scans are never mixed. When a common SCAN property is available, it is preferred as the initial Quick plot X axis. Quick plot keeps the data in long form so different series can have slightly different measured SCAN coordinates.
+
+`Compact note` is the default series label. It uses the first Job Note line, shortens long text, and adds a short Job ID only when labels collide. Full Job Note, Job ID combinations, source path, and editable custom labels remain available.
+
+Combined comparisons open with a single structure viewer. Additional structures can be pinned manually when multi-view comparison is useful. `Join points` is disabled by default for multiple trajectories because Chemiscope otherwise also connects the boundary between consecutive sources in the combined dataset.
+
+On Results / Chemiscope / Data, multi-job selection state is written to the URL when `Refresh` is pressed. The sidebar then shows the canonical Share URL in a code block; use its standard copy control to share the same session, Target Job, and selected-job set.
 
 ## Notes
 
