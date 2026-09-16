@@ -104,7 +104,7 @@ Input handling follows the configuration's workflow mode. Reactant/product workf
 
 ## Chemiscope comparison workflow
 
-The Chemiscope page is a comparison and review surface rather than only a trajectory viewer. Select one or more jobs in the Database sidebar, then select one or more trajectory rows on the page. Multiple selected trajectories are combined into one Chemiscope dataset while retaining `job`, `source`, `trajectory`, frame index, and a human-readable `series_label`.
+The Chemiscope page is a comparison and review surface rather than only a trajectory viewer. Select one or more jobs in the Database sidebar, then select a trajectory row on the page. The trajectory table uses single-row selection by default; enable `Select multiple trajectories` to keep the same table and select several rows for comparison. Multiple selected trajectories are combined into one Chemiscope dataset while retaining `job`, `source`, `trajectory`, frame index, and a human-readable `series_label`.
 
 The trajectory filter also controls compatible companion CSV loading:
 

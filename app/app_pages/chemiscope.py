@@ -638,6 +638,15 @@ st.caption(
 if include_xyz and selected_filter == "All trajectories":
     st.caption(t('XYZ and extxyz files are also shown because Include XYZ is enabled.'))
 
+multi_trajectory_selection = st.toggle(
+    t("Select multiple trajectories"),
+    value=False,
+    key=f"{session_id}_chemiscope_multi_trajectory_selection",
+)
+trajectory_selection_mode = (
+    "multi-row" if multi_trajectory_selection else "single-row"
+)
+
 selection_signature = hashlib.sha1(
     "|".join(prepared_files_df["rel_path"].astype(str)).encode("utf-8")
 ).hexdigest()[:12]
@@ -657,6 +666,23 @@ if trajectory_table_key not in st.session_state:
         ].tolist()
     default_row = int(preferred_rows[0]) if preferred_rows else 0
     st.session_state[trajectory_table_key] = {"selection": {"rows": [default_row]}}
+elif not multi_trajectory_selection:
+    stored_state = st.session_state.get(trajectory_table_key, {})
+    stored_selection = (
+        stored_state.get("selection", {}) if isinstance(stored_state, dict) else {}
+    )
+    stored_rows = (
+        stored_selection.get("rows", []) if isinstance(stored_selection, dict) else []
+    )
+    valid_stored_rows = [
+        index
+        for index in stored_rows
+        if isinstance(index, int) and 0 <= index < len(prepared_files_df)
+    ]
+    if len(valid_stored_rows) > 1:
+        st.session_state[trajectory_table_key] = {
+            "selection": {"rows": [valid_stored_rows[0]]}
+        }
 
 selection_event = st.dataframe(
     prepared_files_df[
@@ -675,7 +701,7 @@ selection_event = st.dataframe(
     width="stretch",
     height=min(360, 36 + 35 * len(prepared_files_df)),
     on_select="rerun",
-    selection_mode="multi-row",
+    selection_mode=trajectory_selection_mode,
     key=trajectory_table_key,
     column_config={
         "Job": st.column_config.TextColumn("Job", width="medium"),
@@ -692,7 +718,10 @@ selected_indices = [
     if isinstance(index, int) and 0 <= index < len(prepared_files_df)
 ]
 if not selected_indices:
-    st.info(t("Select one or more trajectory rows to visualize."))
+    if multi_trajectory_selection:
+        st.info(t("Select one or more trajectory rows to visualize."))
+    else:
+        st.info(t("Select a trajectory row to visualize."))
     st.stop()
 
 selected_file_rows = prepared_files_df.iloc[selected_indices].reset_index(drop=True)

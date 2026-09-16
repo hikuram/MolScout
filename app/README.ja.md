@@ -102,7 +102,7 @@ input の指定方法は configuration の workflow mode に従います。react
 
 ## Chemiscope comparison workflow
 
-Chemiscope page は単なる trajectory viewer ではなく、複数結果の比較・確認用 surface として扱います。Database sidebar で1件以上の job を選択し、page 上で1件以上の trajectory row を選択します。複数 trajectory は1つの Chemiscope dataset に統合しつつ、`job`、`source`、`trajectory`、frame index、表示用 `series_label` を保持します。
+Chemiscope page は単なる trajectory viewer ではなく、複数結果の比較・確認用 surface として扱います。Database sidebar で1件以上の job を選択し、page 上で trajectory row を選択します。trajectory table は既定で single-row 選択とし、`複数trajectoryを選択` をONにすると同じtableのまま複数rowを選択して比較できます。複数 trajectory は1つの Chemiscope dataset に統合しつつ、`job`、`source`、`trajectory`、frame index、表示用 `series_label` を保持します。
 
 Trajectory filter は compatible companion CSV の読み込みも制御します。
 
