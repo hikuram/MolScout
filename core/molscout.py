@@ -44,6 +44,7 @@ from input_validation import (
     validate_endpoint_pair,
     validate_mixed_level_solvation,
     validate_scan_constraints,
+    validate_dmf_constraint_fallback,
 )
 
 
@@ -120,6 +121,12 @@ def validate_runtime_inputs() -> None:
                     (config.get("SCAN_INDICES", []) or []) if init_method == "SCAN" else [],
                     config.get("FIXED_ATOMS", []) or [],
                     len(reactant_atoms),
+                )
+            )
+            issues.extend(
+                validate_dmf_constraint_fallback(
+                    init_method,
+                    config.get("FIXED_ATOMS", []) or [],
                 )
             )
 
@@ -535,8 +542,21 @@ def process_local_maxima():
 
 # Run MEP optimization with FB-ENM/DMF
 def mepopt_dmf(reactant_atoms: Atoms, product_atoms: Atoms) -> None:
-    # Read reactant and product
-    ref_images = [reactant_atoms, product_atoms]
+    # PyDMF currently does not support ASE constraints. Work on unconstrained
+    # copies so endpoint optimization can still use constraints while the DMF
+    # stage itself remains compatible. The original Atoms objects are untouched.
+    dmf_reactant = reactant_atoms.copy()
+    dmf_product = product_atoms.copy()
+    incoming_constraints = bool(dmf_reactant.constraints or dmf_product.constraints)
+    dmf_reactant.set_constraint()
+    dmf_product.set_constraint()
+    ref_images = [dmf_reactant, dmf_product]
+    if incoming_constraints or getattr(g, 'FIXED_ATOMS', []):
+        log(
+            "Warn",
+            "DMF does not support ASE constraints; constraints are disabled for the DMF stage "
+            "and restored for downstream stages.",
+        )
     
     # Generate initial path using FB-ENM
     quiet_stdout = {"print_level": 0, "file_print_level": 5}
@@ -564,9 +584,7 @@ def mepopt_dmf(reactant_atoms: Atoms, product_atoms: Atoms) -> None:
     try:
         mxflx.solve(tol=g.DMF_CONVERGENCE)
     except Exception as e:
-        # Restore state even if DMF fails, to prevent polluting subsequent workflow steps
-        if original_tblite_method == "hybrid":
-            g.TBLITE_METHOD = "hybrid"
+        # run_initial_path_search() owns calculator-state restoration in its finally block.
         write("DMF_last_before_error.xyz", mxflx.images)
         write("DMF_last_before_error.traj", mxflx.images)
         log("Fail", f"abort: DirectMaxFlux.solve failed: {e}")
@@ -587,6 +605,8 @@ def mepopt_dmf(reactant_atoms: Atoms, product_atoms: Atoms) -> None:
             _ = atoms.get_potential_energy()
         except Exception as e:
             log("Warn", f"Failed to compute energy for image {len(final_images)}: {e}")
+        if getattr(g, 'FIXED_ATOMS', []):
+            atoms.set_constraint(FixAtoms(indices=g.FIXED_ATOMS))
         final_images.append(atoms)
     
     # x(tmax): path and history

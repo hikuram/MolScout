@@ -261,6 +261,22 @@ def validate_scan_constraints(
     return issues
 
 
+def validate_dmf_constraint_fallback(
+    init_method: object,
+    fixed_atoms: Sequence[int],
+) -> list[ValidationIssue]:
+    """Warn when FIXED_ATOMS must be disabled for the DMF stage."""
+    if str(init_method).upper() != "DMF" or not list(fixed_atoms):
+        return []
+    return [
+        warning(
+            "dmf_constraints_temporarily_disabled",
+            "DMF does not currently support ASE constraints. FIXED_ATOMS will be "
+            "temporarily disabled during the DMF path search and reapplied to downstream stages.",
+        )
+    ]
+
+
 def _normalize_solvent_token(value: object) -> str:
     return str(value or "").strip().lower().replace(" ", "").replace("-", "")
 

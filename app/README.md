@@ -154,6 +154,7 @@ On Results / Chemiscope / Data, multi-job selection state is written to the URL 
 
 ## Constraints integration policy
 
+- PyDMF does not currently support ASE constraints. If `FIXED_ATOMS` is set with `INIT_PATH_METHOD = DMF`, MolScout warns at submission, temporarily removes constraints only for the DMF path-search stage, and reapplies `FixAtoms` to downstream stages.
 - At this stage, SCAN-coordinate constraints and `FIXED_ATOMS` remain separate settings, combining the existing core `FixInternals` scan and `FixAtoms` behavior.
 - A later stage can represent bond / angle / dihedral scans and fixed atoms through one constraints list, with unified preview, conflict detection, and persistence.
 - Priority validation cases include duplicate constraints on the same internal coordinate, complete fixation of scan atoms, non-positive bond distances, angles near 0/180 deg, and failure to obtain the current coordinate for a relative scan.

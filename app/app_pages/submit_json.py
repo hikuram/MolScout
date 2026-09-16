@@ -51,6 +51,7 @@ from input_validation import (
     validate_endpoint_pair,
     validate_mixed_level_solvation,
     validate_scan_constraints,
+    validate_dmf_constraint_fallback,
 )
 
 
@@ -491,6 +492,13 @@ if not errors:
                     )
                     errors.extend(scan_errors)
                     validation_warnings.extend(scan_warnings)
+                    _, dmf_constraint_warnings = split_issues(
+                        validate_dmf_constraint_fallback(
+                            config.get("INIT_PATH_METHOD", "DMF"),
+                            fixed_atoms,
+                        )
+                    )
+                    validation_warnings.extend(dmf_constraint_warnings)
         elif mode == "single_input":
             if source_mode == "Existing job":
                 representative_atoms = read_structure_file_strict(source_inputs[0]["path"], label="Input structure")

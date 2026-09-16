@@ -84,6 +84,7 @@ from input_validation import (
     validate_mixed_level_solvation,
     validate_pyscf_config_for_save,
     validate_scan_constraints,
+    validate_dmf_constraint_fallback,
 )
 
 REFRESHABLE_JOB_STATUSES = {"running", "cancel_requested", "queued"}
@@ -3389,6 +3390,11 @@ def render_job_submission(session: dict) -> None:
         validate_mixed_level_solvation(validation_config, pyscf_validation_config)
     )
     validation_warnings.extend(solvent_warnings)
+    if mode == "reactant_product" and do_path:
+        _, dmf_constraint_warnings = split_issues(
+            validate_dmf_constraint_fallback(module_settings["init_path_method"], fixed_atoms)
+        )
+        validation_warnings.extend(dmf_constraint_warnings)
 
     representative_atoms = None
     if not errors and preset != "Figure refresh only":

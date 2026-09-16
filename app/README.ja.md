@@ -152,6 +152,7 @@ Results / Chemiscope / Data では、sidebar の `Refresh` を押した時点で
 
 ## Constraints integration policy
 
+- PyDMF は現時点で ASE constraints に対応していません。`INIT_PATH_METHOD = DMF` で `FIXED_ATOMS` が設定されている場合、MolScout は Submit 時に警告を表示し、DMF 経路探索中だけ拘束を一時解除して、後工程では `FixAtoms` を再適用します。
 - 現段階では、SCAN 座標拘束と `FIXED_ATOMS` は独立した設定として扱い、core 既存の `FixInternals` scan と `FixAtoms` を組み合わせます。
 - 次段階では、bond / angle / dihedral scan と fixed atoms を共通の constraints list として表現し、複数拘束のプレビュー、競合検出、保存形式を統一する方針です。
 - 優先する検証は、同一内部座標への重複拘束、scan 対象原子の完全固定、bond 距離の非正値、angle の 0/180 deg 近傍、relative scan の現在値取得失敗です。
