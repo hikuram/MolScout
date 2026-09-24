@@ -17,7 +17,7 @@ pydmf>=1.2.1
 pyscf>=2.13.0
 pyscf-dispersion
 rmsd>=1.6.5
-sella>=v2.4.2
+sella>=2.6.0
 
 # Semi-empirical backend
 tblite>=0.6.0

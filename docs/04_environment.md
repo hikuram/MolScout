@@ -43,9 +43,9 @@ pip install streamlit "chemiscope[streamlit]"
 
 This path does not guarantee identical behavior for CUDA, tblite, gpu4pyscf, or compiled optimizer dependencies. Confirm backend initialization in the job log before using manually installed environments for production calculations.
 
-## 3. Verified package versions
+## 3. Reference package versions
 
-The current verification environment used the following package versions.
+The v0.4.4 compatibility target uses the following package versions. Full backend verification should be repeated after rebuilding the production image.
 
 | Package | Version |
 |---|---:|
@@ -60,7 +60,7 @@ The current verification environment used the following package versions.
 | rmsd | 1.6.5 |
 | scipy | 1.17.1 |
 | seaborn | 0.13.2 |
-| sella | 0.0.1.dev386+g21c6dc7bf |
+| sella | 2.6.0 |
 | streamlit | 1.58.0 |
 | tblite | 0.6.0 |
 | torch | 2.12.0 |

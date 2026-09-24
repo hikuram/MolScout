@@ -2,10 +2,17 @@
 
 [English](README.md)
 
-Current application version: **v0.4.3**  
+Current application version: **v0.4.4**
 Repository: <https://github.com/hikuram/MolScout/>
 
 `app/` directory には、MolScout job の投入、queue 管理、monitoring、停止、archive 作成を行う Streamlit front end が含まれます。本 application は共有 remote use を想定しており、単一の worker が queued calculations を順番に実行します。
+
+## v0.4.4 highlights
+
+- Sella の対応下限を 2.6.0 に更新しました。
+- Sella 2.6 の GPU-resident Hessian に対応するよう AdaptiveIRC の rollback snapshot を更新しました。
+- AdaptiveIRC の rollback/restore で Hessian の initialized state と update metadata を保持します。
+- AdaptiveIRC の logging hook を Sella 2.6 IRC API に合わせました。
 
 ## v0.4.3 highlights
 

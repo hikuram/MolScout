@@ -43,9 +43,9 @@ pip install streamlit "chemiscope[streamlit]"
 
 この方法では、CUDA、tblite、gpu4pyscf、compiled optimizer dependencies に関して Docker 環境と同一の動作は保証されません。manual installation 環境を production calculation に使う前に、job log で backend initialization を確認してください。
 
-## 3. 確認済み package versions
+## 3. 参照 package versions
 
-現在の確認環境では、以下の package versions を使用しました。
+v0.4.4 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
 
 | Package | Version |
 |---|---:|
@@ -60,7 +60,7 @@ pip install streamlit "chemiscope[streamlit]"
 | rmsd | 1.6.5 |
 | scipy | 1.17.1 |
 | seaborn | 0.13.2 |
-| sella | 0.0.1.dev386+g21c6dc7bf |
+| sella | 2.6.0 |
 | streamlit | 1.58.0 |
 | tblite | 0.6.0 |
 | torch | 2.12.0 |

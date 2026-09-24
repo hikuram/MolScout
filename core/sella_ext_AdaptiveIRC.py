@@ -20,8 +20,11 @@ class AdaptiveIRC(IRC):
     - discarded trial steps are NOT written to trajectory
     - the printed/logged step number follows accepted trajectory points
     
-    Tested with Sella 2.4.x
-    Recommended base: Sella v2.4.2
+    Requires Sella >= 2.6.0.
+
+    Sella 2.6 may keep the current approximate Hessian only on the GPU.
+    Rollback snapshots therefore materialize a CPU copy through the public
+    ``ApproximateHessian.asarray()`` interface and preserve Hessian metadata.
     """
     def __init__(self, *args, max_dx=0.12, min_dx=0.02,
                  shrink_factor=0.5, grow_factor=1.25, grow_after=4,
@@ -98,10 +101,14 @@ class AdaptiveIRC(IRC):
         return new_dx >= old_dx - tol
 
     def _snapshot_state(self):
-        if self.pes.H.B is not None:
-            H_backup = self.pes.H.B.copy()
-        else:
-            H_backup = None
+        # Sella >= 2.6 can keep the newest approximate Hessian only on the
+        # GPU. In that state H.B is None even though a valid Hessian exists.
+        # H.asarray() is the supported way to materialize a current CPU copy.
+        H = self.pes.get_H()
+        H_initialized = bool(getattr(H, 'initialized', False))
+        H_cpu = getattr(H, 'B', None)
+        H_has_matrix = H_cpu is not None or H_initialized
+        H_backup = H.asarray().copy() if H_has_matrix else None
 
         state = dict(
             x=self.pes.get_x().copy(),
@@ -109,6 +116,9 @@ class AdaptiveIRC(IRC):
             first=self.first,
             dx=self.dx,
             H=H_backup,
+            H_initialized=H_initialized,
+            H_update_method=getattr(H, 'update_method', 'TS-BFGS'),
+            H_symm=getattr(H, 'symm', 2),
             curr=self._copy_cache_dict(self.pes.curr),
             last=self._copy_cache_dict(self.pes.last),
         )
@@ -119,7 +129,12 @@ class AdaptiveIRC(IRC):
         self.d1 = None if state['d1'] is None else state['d1'].copy()
         self.first = state['first']
         self.dx = state['dx']
-        self.pes.set_H(state['H'], initialized=(state['H'] is not None))
+        self.pes.set_H(
+            state['H'],
+            update_method=state.get('H_update_method', 'TS-BFGS'),
+            symm=state.get('H_symm', 2),
+            initialized=state.get('H_initialized', state['H'] is not None),
+        )
         self.pes.curr = self._copy_cache_dict(state['curr'])
         self.pes.last = self._copy_cache_dict(state['last'])
 
@@ -144,7 +159,7 @@ class AdaptiveIRC(IRC):
             self.pes.write_traj()
 
     def _get_lambda_min(self):
-        evals = getattr(self.pes.H, 'evals', None)
+        evals = getattr(self.pes.get_H(), 'evals', None)
         if evals is None:
             return np.nan
         return evals[0]
@@ -188,7 +203,7 @@ class AdaptiveIRC(IRC):
         return self.converged()
 
     def converged(self, forces=None):
-        evals = getattr(self.pes.H, 'evals', None)
+        evals = getattr(self.pes.get_H(), 'evals', None)
         if evals is None:
             return False
         return self.pes.converged(self.fmax)[0] and (evals[0] > -self.eig_tol)
@@ -361,7 +376,7 @@ class AdaptiveIRC(IRC):
 
                 break
 
-    def log(self, forces=None):
+    def log(self, gradient=None):
         if self.logfile is None:
             return
 
