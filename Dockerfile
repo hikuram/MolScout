@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUPY_ACCELERATORS="cutensor,cub" \
     LD_LIBRARY_PATH="/opt/hpcx/ucx/lib:/opt/hpcx/ucc/lib:${LD_LIBRARY_PATH}"
 
-ARG GPU4PYSCF_REF=v1.8.1
+ARG GPU4PYSCF_REF=v1.9.0
 
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
         | debconf-set-selections \
@@ -57,7 +57,7 @@ RUN git clone --depth 1 --branch "${GPU4PYSCF_REF}" \
     && cmake -S /opt/gpu4pyscf/gpu4pyscf/lib \
         -B /opt/gpu4pyscf/build \
         -DCMAKE_BUILD_TYPE=Release \
-        -DCUDA_ARCHITECTURES="120-real" \
+        -DCMAKE_CUDA_ARCHITECTURES="120-real" \
         -DBUILD_LIBXC=ON \
     && cmake --build /opt/gpu4pyscf/build --parallel 4
 

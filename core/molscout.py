@@ -1158,7 +1158,14 @@ def refine_energy_img(xyz_name, refine_type="pyscf_high"):
         energy_kcal = energy_eV * g.EV_TO_KCAL_MOL
 
         try:
-            export_pyscf_single_point(img, prefix=img_name+"_refine")
+            export_pyscf_single_point(
+                img,
+                prefix=img_name + "_refine",
+                population_analyses=g.POPULATION_ANALYSES,
+                population_grid_level=g.POPULATION_GRID_LEVEL,
+                hirshfeld_xc=g.POPULATION_HIRSHFELD_XC,
+                fast_export=g.POPULATION_FAST_EXPORT,
+            )
             log("I/O", f"Exported PySCF input to {img_name}_refine")
         except Exception as e:
             log("Warn", f"export_pyscf_single_point failed: {e}")

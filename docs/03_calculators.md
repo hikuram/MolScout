@@ -27,3 +27,19 @@ The `core/pyscf_3c.py` helper provides support for composite functionals such as
 ## 5. Configuration notes
 
 Backend behavior depends on installed packages, hardware, and numerical settings. Before production use, confirm the selected backend, charge, multiplicity, solvent setting, and CUDA availability in the job log and `molscout.log`.
+
+### GPU4PySCF 1.9.0 atomic charge analysis
+
+The existing `mulliken_charge` field represents the historical **meta-Lowdin**
+population from PySCF `analyze()`; `mulliken_raw_charge` represents conventional
+Mulliken atomic charges via GPU4PySCF 1.9.0 `mulliken_pop()`. The latter runs
+before CPU conversion. Optional MBIS/Hirshfeld atomic multipoles can be enabled
+through advanced `POPULATION_ANALYSES`, `POPULATION_GRID_LEVEL` and
+`POPULATION_HIRSHFELD_XC` settings. Defaults enable only direct Mulliken
+(legacy fields and Molden export are still preserved). Avoid MBIS/Hirshfeld
+with ECP; check residual charge sums and convergence before interpreting them.
+
+Optional `POPULATION_FAST_EXPORT=true` avoids full-SCF `to_cpu()` and Molden
+writing; legacy meta-Lowdin charge fields are intentionally omitted in that
+mode. This is useful for charge-only screening, but benchmarking remains
+necessary because the upstream Mulliken API transfers AO matrices to CPU.

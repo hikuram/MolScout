@@ -84,9 +84,58 @@ The v0.4.4 compatibility target uses the following package versions. Re-run full
 | pyscf | 2.14.0 |
 | tblite | 0.7.0 |
 | torch | 2.13.0a0+9186a08b2c.nv26.7.59513937 |
-| gpu4pyscf | 1.8.0 |
+| gpu4pyscf | 1.9.0 |
 | cupy | 13.6.0 |
 | cupytensor | 2.3.1 |
+
+### gpu4pyscf v1.9.0 population analysis
+
+By default, PySCF refinement exports the original `mulliken_pop` and
+`mulliken_charge` JSON fields **unchanged in definition** (meta-Lowdin
+populations from the old `analyze()` behavior). It additionally runs
+`mf.mulliken_pop()` **before** the GPU-to-CPU conversion and saves the true
+Mulliken values as `mulliken_raw_pop` and `mulliken_raw_charge`.
+Charge sums and residuals are included for diagnostics. The existing Molden
+file is still written through the CPU converter.
+
+Optional GPU4PySCF v1.9.0 MBIS and Hirshfeld atom-resolved multipoles are
+intentionally disabled by default (potentially large GPU memory cost; Hirshfeld
+also solves neutral-atom SCF calculations). Enable them in an **advanced JSON
+configuration** for selected refinement jobs:
+
+```json
+{
+  "POPULATION_ANALYSES": ["mulliken", "mbis", "hirshfeld"],
+  "POPULATION_GRID_LEVEL": 5,
+  "POPULATION_HIRSHFELD_XC": "PBE"
+}
+```
+
+The optional results are saved as `mbis_charge` / `hirshfeld_charge` and
+`*_dipoles`, `*_quadrupoles`, `*_octupoles`, `*_r2_moment`, `*_r3_moment`,
+`*_r4_moment`. These atom-centered multipoles are not molecular dipole
+moments. MolScout skips MBIS/Hirshfeld for ECP/pseudopotential and ghost-atom systems
+because upstream cautions against or rejects those combinations; `*_error`
+in JSON explains when an analysis was skipped or failed. MBIS can be unstable
+for diffuse negative charges. Do not assume charge partitions from different
+methods are numerically interchangeable. The `POPULATION_HIRSHFELD_XC` setting
+controls neutral reference-atom calculations, not the SCF functional;
+MolScout's PBE default is deliberately cheaper than upstream's `wB97X-V`.
+
+**Optional population-only fast export:** set `"POPULATION_FAST_EXPORT": true`
+in the advanced JSON configuration. This avoids `mf.to_cpu()` for the whole
+SCF object and omits legacy meta-Lowdin fields and the `.molden` file;
+JSON retains the new `mulliken_raw_*` fields, molecular dipole and orbitals.
+The default is `false`, preserving the old export contract. The upstream
+Mulliken API still transfers the density/overlap matrices to CPU, so actual
+speed gains must be benchmarked rather than assumed.
+
+After rebuilding the GPU image, validate both conventional/fast modes:
+
+```bash
+python /opt/MolScout/scripts/check_gpu4pyscf_190.py --include-open-shell
+python /opt/MolScout/scripts/check_gpu4pyscf_190.py --fast-export --outdir gpu190_fast
+```
 
 ## Launching the Streamlit app
 

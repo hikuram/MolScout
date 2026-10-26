@@ -31,6 +31,17 @@ DEVICE: str = "cuda" # "cuda" or "cpu"
 # Set to None to disable. Valid range: 0 < value <= 1.
 PYTORCH_GPU_MEMORY_FRACTION: float | None = 0.50
 
+# Single-point electronic-structure exports (the existing meta-Lowdin fields
+# and Molden file are retained for backward compatibility).
+# Optional MBIS/Hirshfeld are GPU4PySCF >= 1.9.0 features, potentially costly
+# in GPU memory; enable only for selected refinement jobs.
+POPULATION_ANALYSES: list[str] = ["mulliken"]  # "mulliken", "mbis", "hirshfeld"
+POPULATION_GRID_LEVEL: int = 5                 # Used for MBIS / Hirshfeld only
+POPULATION_HIRSHFELD_XC: str = "PBE"           # Neutral-atom reference density
+# True: JSON only, no whole-SCF to_cpu(), legacy meta-Lowdin, or Molden file.
+# False (default): original export contract remains intact.
+POPULATION_FAST_EXPORT: bool = False
+
 # OrbMol settings
 ORBMOL_VERSION: str = "v2" # "v1", "v2"
 

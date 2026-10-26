@@ -84,7 +84,7 @@ v0.4.4 の compatibility target は以下です。production image の rebuild �
 | pyscf | 2.14.0 |
 | tblite | 0.7.0 |
 | torch | 2.13.0a0+9186a08b2c.nv26.7.59513937 |
-| gpu4pyscf | 1.8.0 |
+| gpu4pyscf | 1.9.0 |
 | cupy | 13.6.0 |
 | cupytensor | 2.3.1 |
 
@@ -153,3 +153,54 @@ Colab example は `colab_notebook_example.ipynb`（English）と `colab_notebook
 ## Acknowledgments
 
 本 workflow 設計の一部は ColabReaction および redox_benchmark を参考にしています。production calculation で利用する third-party project と dependencies については、それぞれの license と citation requirements を確認してください。
+
+## gpu4pyscf v1.9.0：原子電荷・多極子解析
+
+高精度 PySCF refinement の終了時に、v1.9.0 の `mf.mulliken_pop()` を
+SCF オブジェクトの CPU 変換前に呼び出します。計算結果は
+`*_refine_pyscf.json` の `mulliken_raw_charge`（通常の Mulliken 電荷）と
+`mulliken_raw_pop` に保存します。ただし、本 API の内部では密度行列と
+重なり行列を CPU に転送するため、「完全 GPU 常駐化」ではありません。
+
+従来の `mulliken_charge` / `mulliken_pop` は、旧 `analyze()` が出力していた
+**meta-Löwdin 分割**の値です。新しい通常の Mulliken 電荷と数値的に同じとは
+限りません。比較のため旧キーは保持し、従来の Molden 出力も維持します。
+
+MBIS・Hirshfeld の原子電荷、原子中心の双極子・四極子・八極子および
+動径モーメントを追加できますが、既定では実行しません。選択した refinement
+job の詳細 JSON 設定へ、必要に応じて次を加えます。
+
+```json
+{
+  "POPULATION_ANALYSES": ["mulliken", "mbis", "hirshfeld"],
+  "POPULATION_GRID_LEVEL": 5,
+  "POPULATION_HIRSHFELD_XC": "PBE"
+}
+```
+
+`POPULATION_HIRSHFELD_XC` は中性原子参照密度用の汎関数で、元の分子計算に
+使用した XC と独立です。`PBE` は MolScout 側の計算負荷を考慮した既定値であり、
+GPU4PySCF upstream の Hirshfeld API の既定値 `wB97X-V` とは異なります。
+ECP・擬ポテンシャル・ghost atom は MBIS/Hirshfeld でスキップし、その理由を
+JSON に記録します。MBIS は拡散した負電荷で不安定になり得るため、強いアニオン
+では特に結果の検証が必要です。`hirshfeld_*_dipoles` 等は原子中心のモーメントで、
+分子全体の `dip_moment` とは別物です。
+
+**電荷解析に特化した高速出力モード**では、詳細 JSON 設定に
+`"POPULATION_FAST_EXPORT": true` を追加します。この場合は SCF オブジェクト
+全体の `to_cpu()` を避け、通常 Mulliken 電荷や分子双極子等を JSON に出力します。
+一方で旧 `mulliken_charge`（meta-Löwdin）と `.molden` は省略されます。
+既定値は `false` で、従来ファイルとの互換性を維持します。
+GPU4PySCF の Mulliken API 自体も密度・重なり行列を CPU 転送するため、
+高速化の程度は実機で比較してください。
+
+実機 GPU での確認には、Docker image 再構築後に次のテストを使います。
+
+```bash
+python /opt/MolScout/scripts/check_gpu4pyscf_190.py \
+  --outdir /workspace/gpu190_smoke --include-open-shell
+```
+
+追加解析は `--with-mbis` / `--with-hirshfeld` を明示した場合のみ実行されます。
+`tests/test_pyscf_exporter.py` は GPU 不要のモック回帰テストであり、GPU 実機の
+数値保証にはなりません。
