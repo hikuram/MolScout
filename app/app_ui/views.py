@@ -48,6 +48,11 @@ from app_core.config import (
 from app_core.job_runner import build_command, reload_job, stop_job, workflow_script_name
 from app_core.job_manifest import manifest_input, write_job_manifest
 from app_core.paths import APP_DIR, AUTO_REFRESH_SECONDS, SESSION_RETENTION_DAYS, WORKER_LOG_FILE, ensure_app_dirs
+from app_core.population_settings import (
+    POPULATION_UI_DEFAULTS,
+    population_config_overrides,
+    selected_population_methods,
+)
 from app_core.queue_manager import (
     delete_job_from_queue,
     enqueue_job,
@@ -253,6 +258,7 @@ PATH_SUBMIT_DEFAULTS = {
     "refine_input_on": True,
     "pick_optpoints_on": True,
     "save_fig_on": True,
+    **POPULATION_UI_DEFAULTS,
     **MODULE_DEFAULTS,
 }
 
@@ -267,6 +273,7 @@ CONCAT_SUBMIT_DEFAULTS = {
     "result_name": "result.csv",
     "save_fig_on": True,
     "pick_optpoints_on": False,
+    **POPULATION_UI_DEFAULTS,
     **MODULE_DEFAULTS,
 }
 
@@ -298,6 +305,7 @@ def path_submit_state_keys(session_id: str) -> dict[str, str]:
         "pick_optpoints_on": f"{session_id}_pick_optpoints",
         "save_fig_on": f"{session_id}_savefig",
     }
+    keys.update(prefixed_state_keys(session_id, list(POPULATION_UI_DEFAULTS)))
     keys.update(prefixed_state_keys(path_prefix, list(MODULE_DEFAULTS)))
     return keys
 
@@ -316,6 +324,7 @@ def concat_submit_state_keys(session_id: str) -> dict[str, str]:
         "save_fig_on": f"{prefix}_savefig",
         "pick_optpoints_on": f"{prefix}_pick_optpoints",
     }
+    keys.update(prefixed_state_keys(prefix, list(POPULATION_UI_DEFAULTS)))
     keys.update(prefixed_state_keys(prefix, list(MODULE_DEFAULTS)))
     return keys
 
@@ -1794,6 +1803,7 @@ def render_workflow_preview_dialog(
     scan_mf_steps: int | None,
     orbmol_version: str,
     alpb_solvent: str,
+    population_settings: dict[str, object],
 ) -> None:
     summary_cols = st.columns(3)
     with summary_cols[0]:
@@ -1919,8 +1929,11 @@ def render_workflow_preview_dialog(
         9,
         "High-level energy refine",
         do_refine,
-        t('Controlled by `REFINE_ENERGY_ON`. Run high-level single points with PySCF.'),
-        "*_refine_pyscf.json / *.molden" if do_refine else "",
+        (
+            t('Controlled by `REFINE_ENERGY_ON`. Run high-level single points with PySCF.')
+            + (" " + population_refinement_preview(population_settings) if do_refine else "")
+        ),
+        population_refinement_files(population_settings) if do_refine else "",
     )
     render_workflow_preview_step(
         10,
@@ -1940,6 +1953,7 @@ def render_concat_workflow_preview_dialog(
     do_refine: bool,
     pick_optpoints_on: bool,
     save_fig_on: bool,
+    population_settings: dict[str, object],
 ) -> None:
     summary_cols = st.columns(3)
     with summary_cols[0]:
@@ -1996,8 +2010,11 @@ def render_concat_workflow_preview_dialog(
         7,
         "High-level energy refine",
         do_refine,
-        t('Controlled by `REFINE_ENERGY_ON`. Run high-level single points with PySCF.'),
-        "*_refine_pyscf.json / *.molden" if do_refine else "",
+        (
+            t('Controlled by `REFINE_ENERGY_ON`. Run high-level single points with PySCF.')
+            + (" " + population_refinement_preview(population_settings) if do_refine else "")
+        ),
+        population_refinement_files(population_settings) if do_refine else "",
     )
     render_workflow_preview_step(
         8,
@@ -2006,6 +2023,91 @@ def render_concat_workflow_preview_dialog(
         t('Controlled by `SAVE_FIG_ON`. Save the profile figure and logs at the end.'),
         "fig_result.png / timing.log / molscout.log" if save_fig_on else "timing.log / molscout.log",
     )
+
+
+def render_population_output_settings(prefix: str) -> dict[str, object]:
+    """PySCF export options shared by regular jobs and concatenation jobs.
+
+    Always show editable controls, even when Energy Refine is currently off:
+    form widgets do not cause reruns until the form's submit button is pressed.
+    The selected options are therefore staged for the next refinement job.
+    """
+    settings: dict[str, object] = {}
+    with st.expander(t("Atomic charge analysis (PySCF Energy Refine)"), expanded=False):
+        st.caption(t(
+            "Applies only when Energy Refine is enabled. These options do not "
+            "start an additional calculation stage."
+        ))
+        st.markdown(t("**Population analysis methods**"))
+        cols = st.columns(3)
+        method_labels = (
+            ("mulliken", "Mulliken (direct AO)"),
+            ("mbis", "MBIS"),
+            ("hirshfeld", "Hirshfeld"),
+        )
+        for col, (method, label) in zip(cols, method_labels):
+            name = f"population_{method}"
+            key = f"{prefix}_{name}"
+            settings[name] = col.checkbox(
+                t(label),
+                key=key,
+                **widget_default_kwargs(key, value=bool(POPULATION_UI_DEFAULTS[name])),
+            )
+
+        mode_key = f"{prefix}_population_export_mode"
+        settings["population_export_mode"] = st.radio(
+            t("Population export mode"),
+            ("compatible", "fast"),
+            key=mode_key,
+            horizontal=True,
+            format_func=lambda mode: t(
+                "Compatible (legacy meta-Lowdin + Molden)"
+                if mode == "compatible" else "Lightweight (JSON only)"
+            ),
+            **widget_default_kwargs(mode_key, index=0),
+        )
+        st.caption(t(
+            "Compatible mode retains the historical `mulliken_charge` "
+            "(meta-Lowdin) and Molden output, regardless of whether direct "
+            "Mulliken is selected. Lightweight mode skips both."
+        ))
+
+        detail_cols = st.columns([1, 2])
+        grid_key = f"{prefix}_population_grid_level"
+        settings["population_grid_level"] = detail_cols[0].number_input(
+            t("MBIS / Hirshfeld grid level"),
+            min_value=0,
+            max_value=9,
+            step=1,
+            key=grid_key,
+            **widget_default_kwargs(grid_key, value=5),
+        )
+        xc_key = f"{prefix}_population_hirshfeld_xc"
+        settings["population_hirshfeld_xc"] = detail_cols[1].text_input(
+            t("Hirshfeld reference XC"),
+            key=xc_key,
+            **widget_default_kwargs(xc_key, value="PBE"),
+        )
+        st.caption(t(
+            "Grid and reference XC settings affect MBIS / Hirshfeld only. "
+            "These methods can require substantial GPU memory and runtime."
+        ))
+    return settings
+
+
+def population_refinement_preview(settings: dict[str, object]) -> str:
+    methods = selected_population_methods(settings)
+    return tf(
+        "Atomic charge methods: {methods}; export mode: {mode}.",
+        methods=", ".join(methods) if methods else t("none"),
+        mode=str(settings.get("population_export_mode", "compatible")),
+    )
+
+
+def population_refinement_files(settings: dict[str, object]) -> str:
+    if settings.get("population_export_mode") == "fast":
+        return "*_refine_pyscf.json"
+    return "*_refine_pyscf.json / *.molden"
 
 
 def render_module_settings(
@@ -3199,6 +3301,7 @@ def render_job_submission(session: dict) -> None:
             result_name = Path(st.text_input("result CSV name", key=result_key, **widget_default_kwargs(result_key, value="result.csv"))).name
         with output_cols[1]:
             note = st.text_input("job note", value="", key=f"{session_id}_note")
+        population_settings = render_population_output_settings(session_id)
 
         st.markdown("**6. Extra Workflow Options**")
         extra_cols = st.columns(3)
@@ -3241,6 +3344,11 @@ def render_job_submission(session: dict) -> None:
         st.rerun()
 
     if save_defaults_pressed:
+        try:
+            population_config_overrides(population_settings)
+        except ValueError as exc:
+            st.error(str(exc))
+            return
         save_submit_defaults(
             session,
             PATH_SUBMIT_SECTION,
@@ -3258,6 +3366,7 @@ def render_job_submission(session: dict) -> None:
                 "mult": int(mult),
                 "temp": float(temp),
                 "result_name": result_name,
+                **population_settings,
                 "refine_input_on": bool(refine_input_on),
                 "pick_optpoints_on": bool(pick_optpoints_on),
                 "save_fig_on": bool(save_fig_on),
@@ -3289,6 +3398,7 @@ def render_job_submission(session: dict) -> None:
             ),
             orbmol_version=str(orbmol_version),
             alpb_solvent=str(alpb_solvent),
+            population_settings=population_settings,
         )
         return
 
@@ -3296,6 +3406,11 @@ def render_job_submission(session: dict) -> None:
         return
 
     errors: list[str] = []
+    try:
+        population_overrides = population_config_overrides(population_settings)
+    except ValueError as exc:
+        population_overrides = {}
+        errors.append(str(exc))
     if not method:
         errors.append(t('Method is required.'))
     if not result_name.endswith(".csv"):
@@ -3529,6 +3644,7 @@ def render_job_submission(session: dict) -> None:
         "REFINE_CALC_TYPE": str(module_settings["refine_calc_type"]),
         "OPT_OPTPOINTS_AGAIN_ON": bool(module_settings["opt_optpoints_again_on"]),
         "FIXED_ATOMS": fixed_atoms,
+        **population_overrides,
     }
 
     job_root = job_dir(session_id, job["job_id"])
@@ -3729,14 +3845,16 @@ def render_concat_submission(session: dict) -> None:
                     disabled=not tblite_enabled,
                     **widget_default_kwargs(tblite_accuracy_key, value=DEFAULT_TBLITE_ACCURACY),
                 )
+        st.markdown("**4. Output Settings**")
         output_cols = st.columns([1, 2.4])
         with output_cols[0]:
             result_key = f"{session_id}_cat_res"
             result_name = Path(st.text_input("result CSV name", key=result_key, **widget_default_kwargs(result_key, value="result.csv"))).name
         with output_cols[1]:
             note = st.text_input("job note", value="", key=f"{session_id}_cat_note")
+        population_settings = render_population_output_settings(f"{session_id}_cat")
 
-        st.markdown("**4. Extra workflow flags**")
+        st.markdown("**5. Extra Workflow Options**")
         extra_cols = st.columns(3)
         save_fig_key = f"{session_id}_cat_savefig"
         pick_optpoints_key = f"{session_id}_cat_pick_optpoints"
@@ -3764,6 +3882,11 @@ def render_concat_submission(session: dict) -> None:
         st.rerun()
 
     if save_defaults_pressed:
+        try:
+            population_config_overrides(population_settings)
+        except ValueError as exc:
+            st.error(str(exc))
+            return
         save_submit_defaults(
             session,
             CONCAT_SUBMIT_SECTION,
@@ -3782,6 +3905,7 @@ def render_concat_submission(session: dict) -> None:
                 "mult": int(mult),
                 "temp": float(temp),
                 "result_name": result_name,
+                **population_settings,
                 "save_fig_on": bool(save_fig_on),
                 "pick_optpoints_on": bool(pick_optpoints_on),
             },
@@ -3797,6 +3921,7 @@ def render_concat_submission(session: dict) -> None:
             do_refine=bool(do_refine),
             pick_optpoints_on=bool(pick_optpoints_on),
             save_fig_on=bool(save_fig_on),
+            population_settings=population_settings,
         )
         return
 
@@ -3804,6 +3929,11 @@ def render_concat_submission(session: dict) -> None:
         return
 
     errors: list[str] = []
+    try:
+        population_overrides = population_config_overrides(population_settings)
+    except ValueError as exc:
+        population_overrides = {}
+        errors.append(str(exc))
     if not method:
         errors.append(t('Method is required.'))
     if not result_name.endswith(".csv"):
@@ -3972,6 +4102,7 @@ def render_concat_submission(session: dict) -> None:
         "OPT_OPTPOINTS_AGAIN_ON": bool(module_settings["opt_optpoints_again_on"]),
         "FIXED_ATOMS": fixed_atoms,
         "PYSCF_CONFIG_FILE": str(pyscf_config_path),
+        **population_overrides,
     }
 
     stdout_log = job_root / "stdout.log"

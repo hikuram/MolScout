@@ -291,5 +291,18 @@
   "Treat different atom-index targets as one comparison axis when all selected trajectories use the same coordinate type. Bond, angle, and dihedral scans are never mixed.": "選択した trajectory が同じ coordinate type の場合、原子indexが異なるSCAN対象を共通比較軸として扱います。bond、angle、dihedral は相互に混在させません。",
   "Join points is enabled for a combined dataset; the last frame of one trajectory will also connect to the first frame of the next trajectory.": "結合datasetで Join points がONです。各 trajectory の最終frameと次のtrajectoryの先頭frameも接続されます。",
   "Controls the label used for Quick plot series and the Chemiscope symbol property. Compact note uses the first Job Note line, shortens long text, and adds a short Job ID only when labels collide.": "Quick plot の系列名と Chemiscope symbol property に使うlabelを指定します。Compact note は Job Note の先頭行を短縮し、重複時だけ短い Job ID を付加します。",
-  "Combined comparisons open with one structure viewer. Additional structures can still be pinned in Chemiscope when a multi-view comparison is useful.": "複数trajectory比較でも初期structure viewerは1つです。必要な場合は Chemiscope 上で追加structureをpinしてmulti-view比較できます。"
+  "Combined comparisons open with one structure viewer. Additional structures can still be pinned in Chemiscope when a multi-view comparison is useful.": "複数trajectory比較でも初期structure viewerは1つです。必要な場合は Chemiscope 上で追加structureをpinしてmulti-view比較できます。",
+  "Atomic charge analysis (PySCF Energy Refine)": "原子電荷解析（PySCF Energy Refine）",
+  "Applies only when Energy Refine is enabled. These options do not start an additional calculation stage.": "これらの設定は Energy Refine が有効な場合にのみ適用されます。追加の計算ステージを開始するものではありません。",
+  "**Population analysis methods**": "**原子電荷解析法**",
+  "Mulliken (direct AO)": "Mulliken（通常の AO 基底）",
+  "Population export mode": "電荷解析の出力モード",
+  "Compatible (legacy meta-Lowdin + Molden)": "互換（従来の meta-Löwdin 電荷＋Molden）",
+  "Lightweight (JSON only)": "軽量（JSONのみ）",
+  "Compatible mode retains the historical `mulliken_charge` (meta-Lowdin) and Molden output, regardless of whether direct Mulliken is selected. Lightweight mode skips both.": "互換モードでは通常 Mulliken の選択にかかわらず、従来の `mulliken_charge`（meta-Löwdin）と Molden を出力します。軽量モードでは両方を省略します。",
+  "MBIS / Hirshfeld grid level": "MBIS / Hirshfeld グリッドレベル",
+  "Hirshfeld reference XC": "Hirshfeld 参照原子の XC",
+  "Grid and reference XC settings affect MBIS / Hirshfeld only. These methods can require substantial GPU memory and runtime.": "グリッドと参照 XC は MBIS / Hirshfeld のみに関係します。これらの解析は GPU メモリと計算時間を大きく消費する場合があります。",
+  "Atomic charge methods: {methods}; export mode: {mode}.": "原子電荷解析: {methods}、出力モード: {mode}。",
+  "none": "なし"
 }

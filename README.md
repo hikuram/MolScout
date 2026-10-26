@@ -2,7 +2,7 @@
 
 [日本語](README.ja.md)
 
-Current application version: **v0.4.4**
+Current application version: **v0.4.5**
 Repository: <https://github.com/hikuram/MolScout/>
 
 MolScout is a Python toolkit for automating reaction-path searches and follow-up molecular calculations. It treats initial-path generation, transition-state optimization, intrinsic reaction coordinate calculations, vibrational analysis, thermochemical evaluation, and optional high-level energy refinement as a connected workflow.
@@ -68,11 +68,11 @@ Direct setup with pip is also possible for development or lightweight checks, bu
 pip install -r requirements.txt
 ```
 
-MolScout v0.4.4 requires Sella >= 2.6.0. Pre-2.6 Sella releases are not supported by the current AdaptiveIRC integration.
+MolScout v0.4.5 requires Sella >= 2.6.0. Pre-2.6 Sella releases are not supported by the current AdaptiveIRC integration.
 
 ## Reference environment
 
-The v0.4.4 compatibility target uses the following package versions. Re-run full backend verification after rebuilding the production image.
+The v0.4.5 compatibility target uses the following package versions. Re-run full backend verification after rebuilding the production image.
 
 | package | version |
 |---|---|

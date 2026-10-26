@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-Current application version: **v0.4.4**
+Current application version: **v0.4.5**
 Repository: <https://github.com/hikuram/MolScout/>
 
 MolScout は、反応経路探索と後続の分子計算を自動化するための Python toolkit です。初期経路生成、transition-state optimization、intrinsic reaction coordinate 計算、vibrational analysis、熱化学量評価、および任意の高精度 energy refinement を一連の workflow として扱います。
@@ -68,11 +68,11 @@ streamlit run /opt/MolScout/app/streamlit_app_ja.py --server.address 0.0.0.0
 pip install -r requirements.txt
 ```
 
-MolScout v0.4.4 では Sella >= 2.6.0 を必須とします。現行 AdaptiveIRC integration では Sella 2.6 未満をサポートしません。
+MolScout v0.4.5 では Sella >= 2.6.0 を必須とします。現行 AdaptiveIRC integration では Sella 2.6 未満をサポートしません。
 
 ## 参照環境
 
-v0.4.4 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
+v0.4.5 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
 
 | package | version |
 |---|---|
