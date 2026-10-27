@@ -34,7 +34,9 @@ COPY requirements.txt /tmp/requirements.txt
 # PyTorch and its CUDA libraries are provided by the NGC base image.
 RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
         /tmp/requirements.txt > /tmp/requirements.ngc.txt \
-    && python3 -m pip freeze | grep '^torch==' > /tmp/ngc-torch-constraint.txt \
+    && python3 -c "from importlib.metadata import version; print('torch==' + version('torch'))" \
+        > /tmp/ngc-torch-constraint.txt \
+    && echo "Using preinstalled NGC $(cat /tmp/ngc-torch-constraint.txt)" \
     && python3 -m pip install --no-cache-dir \
         -c /tmp/ngc-torch-constraint.txt \
         -r /tmp/requirements.ngc.txt
