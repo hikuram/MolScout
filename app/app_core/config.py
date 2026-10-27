@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import CORE_DIR
 
 
-APP_VERSION = "0.4.5"
+APP_VERSION = "0.4.6"
 REPOSITORY_URL = "https://github.com/hikuram/MolScout/"
 
 
@@ -100,6 +100,13 @@ PACKAGE_CHECKS = [
         "label": "PySCF backend",
     },
     {
+        "package": "upet",
+        "imports": ["upet"],
+        "distributions": ["upet"],
+        "label": "optional PET-OMol-S/L Delta E cross-check",
+        "required": False,
+    },
+    {
         "package": "tblite",
         "imports": ["tblite"],
         "distributions": ["tblite"],
@@ -146,6 +153,7 @@ PACKAGE_CHECKS = [
 SAMPLE_INPUT_ROOT = CORE_DIR / "sample_input"
 RESULT_CANDIDATES = [
     "result.csv",
+    "cross_backend.csv",
     "molscout.log",
     "timing.log",
     "suggestions.txt",

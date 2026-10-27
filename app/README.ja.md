@@ -2,10 +2,26 @@
 
 [English](README.md)
 
-Current application version: **v0.4.4**
+Current application version: **v0.4.6**
 Repository: <https://github.com/hikuram/MolScout/>
 
 `app/` directory には、MolScout job の投入、queue 管理、monitoring、停止、archive 作成を行う Streamlit front end が含まれます。本 application は共有 remote use を想定しており、単一の worker が queued calculations を順番に実行します。
+
+## v0.4.6: PET-OMol-S/L を使う ΔE 比較 (任意)
+
+Submit の「6. Extra Workflow Options」と Concatenation の「5. Extra Workflow Options」に、
+**Cross-backend MLIP Delta E** を追加。S/L は **両方初期OFF** です。
+Primary OrbMol の ΔE を維持したまま、同じ構造系列に対する PET-OMol の single-point ΔE を
+`cross_backend.csv` に出力します。FP32 highest（既定）/ FP64 を選択できます。
+比較用 checkpoint は UPET 0.3.1 + PET-OMol v1.0.0 に固定しています。
+MF-SCAN、構造最適化した CAT、Figure refresh は対象外です。
+参照：`docs/05_cross_backend_pet_omol.md`。
+
+## v0.4.5 highlights
+
+- Submit / Concatenation の PySCF 原子電荷設定を追加。
+- Mulliken / MBIS / Hirshfeld、出力モード、グリッドレベル、参照 XC と session defaults / job 設定を対応。
+- 軽量モードの preview から Molden 出力を除外。
 
 ## v0.4.4 highlights
 
@@ -100,6 +116,28 @@ streamlit run app/streamlit_app.py
 ```bash
 streamlit run app/streamlit_app_ja.py
 ```
+
+## Submit の PySCF 原子電荷設定
+
+通常の Submit と Concatenation の **Output Settings** に
+**Atomic charge analysis (PySCF Energy Refine)** を追加しました。
+両フォームは独立した設定を持ち、Reset / Set as session default に対応します。
+選択値は job ごとの `submitted_config.json` に保存されます。
+
+| UI | job の設定キー | 初期値 |
+|---|---|---|
+| Mulliken / MBIS / Hirshfeld | `POPULATION_ANALYSES` | `["mulliken"]` |
+| 互換 / 軽量 モード | `POPULATION_FAST_EXPORT` | `false` |
+| グリッドレベル | `POPULATION_GRID_LEVEL` | `5` |
+| Hirshfeld 参照 XC | `POPULATION_HIRSHFELD_XC` | `PBE` |
+
+**Energy Refine が ON の job にのみ適用**され、設定自体は新しい計算工程を増やしません。
+互換モードでは従来の meta-Löwdin `mulliken_charge` と Molden を維持します。
+通常 Mulliken は `mulliken_raw_charge` です。軽量モードでは Molden と従来の meta-Löwdin 出力を省略します。
+MBIS / Hirshfeld には追加の計算時間・VRAM が必要です。
+
+将来の OrbMol `latent_charge` は本更新の対象外です。
+異なる電荷定義の比較であることを明示して追加する予定です。
 
 ## Submit (JSON)
 

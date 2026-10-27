@@ -1982,8 +1982,16 @@ if __name__ == '__main__':
             write_energies(g.I_TRAJ, g.R_CSV)
         process_local_maxima()
     
-    # Finish
+    # Finish the Primary workflow before any optional secondary MLIP is loaded.
     finalize_run()
+    if getattr(g, "CROSS_BACKEND_MODELS", []):
+        try:
+            from cross_backend import compare_primary_with_pet
+
+            compare_primary_with_pet(g)
+        except Exception as exc:
+            # A secondary evaluator must never overturn the Primary result.
+            log("Warn", f"Optional PET-OMol Delta E comparison skipped: {type(exc).__name__}: {exc}")
     t_total = timepfc() - t_total_start
     txt = f"* Total_Time            | {t_total:>12.2f} s  *\n"
     write_line(g.TIME_LOG_NAME, txt)

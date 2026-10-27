@@ -2,12 +2,21 @@
 
 [English](README.md)
 
-Current application version: **v0.4.5**
+Current application version: **v0.4.6**
 Repository: <https://github.com/hikuram/MolScout/>
 
 MolScout は、反応経路探索と後続の分子計算を自動化するための Python toolkit です。初期経路生成、transition-state optimization、intrinsic reaction coordinate 計算、vibrational analysis、熱化学量評価、および任意の高精度 energy refinement を一連の workflow として扱います。
 
 本リポジトリは、共有実行用の Streamlit application と、科学計算 workflow を格納する `core/` directory を中心に構成されています。従来の個別 workflow script は整理済みであり、workflow stage の選択は application wrapper と `core/default_config.py` によって制御します。
+
+## v0.4.6: PET-OMol ΔE 比較オプション
+
+Submit (6. Extra Workflow Options) と Concatenation (5. Extra Workflow Options) に
+**PET-OMol-S/L single-point ΔE** の追加比較を実装しました。両モデルは初期OFF。
+Primary OrbMol のエネルギー系列を再計算せず、同じ構造に PET を順次適用して
+`cross_backend.csv` に記録します。UPET 0.3.1、checkpoints v1.0.0。
+FP32 highest が既定で、FP64 も選択可能です。
+詳しくは [docs/05_cross_backend_pet_omol.md](docs/05_cross_backend_pet_omol.md)。
 
 ## 主な機能
 
@@ -72,7 +81,7 @@ MolScout v0.4.5 では Sella >= 2.6.0 を必須とします。現行 AdaptiveIRC
 
 ## 参照環境
 
-v0.4.5 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
+v0.4.6 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
 
 | package | version |
 |---|---|

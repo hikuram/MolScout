@@ -34,7 +34,9 @@ COPY requirements.txt /tmp/requirements.txt
 # PyTorch and its CUDA libraries are provided by the NGC base image.
 RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
         /tmp/requirements.txt > /tmp/requirements.ngc.txt \
+    && python3 -m pip freeze | grep '^torch==' > /tmp/ngc-torch-constraint.txt \
     && python3 -m pip install --no-cache-dir \
+        -c /tmp/ngc-torch-constraint.txt \
         -r /tmp/requirements.ngc.txt
 
 # CUDA libraries used by GPU4PySCF.
@@ -82,6 +84,17 @@ RUN fc-cache -f \
         "from orb_models.forcefield import pretrained; pretrained.orbmol_v2(device='cpu', precision='float64')" \
     && python3 -c \
         "from orb_models.forcefield import pretrained; pretrained.orbmol_v1_conservative(device='cpu', precision='float64')"
+
+# Preload pinned PET-OMol checkpoints because execution is offline.  When
+# disabled, supply both model files in MOLSCOUT_UPET_CHECKPOINT_DIR yourself.
+# The L checkpoint adds ~1 GB to the image, even though its UI option is OFF.
+ARG PREFETCH_UPET_CHECKPOINTS=1
+ENV MOLSCOUT_UPET_CHECKPOINT_DIR=/opt/MolScout/.cache/upet_models/models
+RUN if [ "${PREFETCH_UPET_CHECKPOINTS}" = "1" ]; then \
+        python3 -c "from huggingface_hub import hf_hub_download; [hf_hub_download(repo_id='lab-cosmo/upet', filename='models/pet-omol-' + size + '-v1.0.0.ckpt', local_dir='/opt/MolScout/.cache/upet_models') for size in ('s', 'l')]" \
+        && echo '9a78baeb288751490bb351371fc4df41505b7165b6f74ef2d61125d28fe3d298  /opt/MolScout/.cache/upet_models/models/pet-omol-s-v1.0.0.ckpt' | sha256sum -c - \
+        && echo 'aba2ca84306e9c51abe9172df05fb950507391c5412716c9a81883c320500093  /opt/MolScout/.cache/upet_models/models/pet-omol-l-v1.0.0.ckpt' | sha256sum -c -; \
+    fi
 
 ENV HF_HUB_OFFLINE=1 \
     TRANSFORMERS_OFFLINE=1 \

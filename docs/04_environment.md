@@ -45,7 +45,7 @@ This path does not guarantee identical behavior for CUDA, tblite, gpu4pyscf, or 
 
 ## 3. Reference package versions
 
-The v0.4.5 compatibility target uses the following package versions. Full backend verification should be repeated after rebuilding the production image.
+The v0.4.6 compatibility target uses the following package versions. Full backend verification should be repeated after rebuilding the production image.
 
 | Package | Version |
 |---|---:|

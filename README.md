@@ -2,7 +2,7 @@
 
 [日本語](README.ja.md)
 
-Current application version: **v0.4.5**
+Current application version: **v0.4.6**
 Repository: <https://github.com/hikuram/MolScout/>
 
 MolScout is a Python toolkit for automating reaction-path searches and follow-up molecular calculations. It treats initial-path generation, transition-state optimization, intrinsic reaction coordinate calculations, vibrational analysis, thermochemical evaluation, and optional high-level energy refinement as a connected workflow.
@@ -70,9 +70,20 @@ pip install -r requirements.txt
 
 MolScout v0.4.5 requires Sella >= 2.6.0. Pre-2.6 Sella releases are not supported by the current AdaptiveIRC integration.
 
+## v0.4.6: Optional PET-OMol Delta E cross-check
+
+**Submit > 6. Extra Workflow Options** (and Concatenation > 5) can now run
+PET-OMol-S and/or PET-OMol-L single-point evaluations on the **same structures**
+as an existing Primary OrbMol Delta E series. Both options default to **OFF**.
+The new `cross_backend.csv` retains Primary Delta E and stores each PET model's
+independently referenced Delta E; original result files remain unchanged.
+The integration pins UPET 0.3.1 and PET-OMol checkpoints v1.0.0, supports FP32
+(highest) / FP64 and needs an image rebuild to install models.
+[Details and limitations](docs/05_cross_backend_pet_omol.md).
+
 ## Reference environment
 
-The v0.4.5 compatibility target uses the following package versions. Re-run full backend verification after rebuilding the production image.
+The v0.4.6 compatibility target uses the following package versions. Re-run full backend verification after rebuilding the production image.
 
 | package | version |
 |---|---|

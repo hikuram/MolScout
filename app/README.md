@@ -2,10 +2,25 @@
 
 [日本語](README.ja.md)
 
-Current application version: **v0.4.4**
+Current application version: **v0.4.6**
 Repository: <https://github.com/hikuram/MolScout/>
 
 The `app/` directory contains the Streamlit front end for submitting MolScout jobs, managing the queue, monitoring runs, stopping jobs, and creating archives. The application is intended for shared remote use, with a single worker executing queued calculations sequentially.
+
+## v0.4.6: Optional PET-OMol-S/L Delta E cross-check
+
+Submit's **6. Extra Workflow Options** and Concatenation's **5. Extra Workflow
+Options** now contain a **Cross-backend MLIP Delta E** section. Both models
+default to **OFF**. The option independently evaluates the already-scored
+Primary OrbMol structure series and saves `cross_backend.csv`, retaining the
+original trajectory and result CSV. FP32 highest (default) and FP64 are supported.
+See `docs/05_cross_backend_pet_omol.md` for scope and setup.
+
+## v0.4.5 highlights
+
+- Added PySCF atomic-charge output controls to regular Submit and Concatenation jobs.
+- Supports Mulliken, MBIS, Hirshfeld, export mode, grid level, and reference XC; per-form session defaults and job config exports.
+- Updated refinement previews so Lightweight mode no longer lists Molden output.
 
 ## v0.4.4 highlights
 
@@ -102,6 +117,32 @@ For the Japanese-assisted UI:
 ```bash
 streamlit run app/streamlit_app_ja.py
 ```
+
+## PySCF atomic charge controls in Submit
+
+The **Output Settings** area of both ordinary Submit jobs and Concatenation jobs
+now contains an **Atomic charge analysis (PySCF Energy Refine)** expander.
+Its settings are independent for the two job forms, can be reset or saved as
+session defaults, and are recorded in the job's `submitted_config.json`:
+
+| GUI setting | Core job override | Default |
+|---|---|---|
+| Mulliken (direct AO), MBIS, Hirshfeld checkboxes | `POPULATION_ANALYSES` | `["mulliken"]` |
+| Compatible / Lightweight mode | `POPULATION_FAST_EXPORT` | `false` |
+| MBIS / Hirshfeld grid level | `POPULATION_GRID_LEVEL` | `5` |
+| Hirshfeld reference XC | `POPULATION_HIRSHFELD_XC` | `PBE` |
+
+The settings apply only when **Energy Refine** is enabled; changing them does
+not cause extra refinement stages. Form controls remain editable when refine
+is off, so selections can be staged before enabling it. The default compatible
+mode retains the previous meta-Lowdin `mulliken_charge` and Molden output.
+The newly requested conventional Mulliken charges are in `mulliken_raw_charge`.
+Lightweight mode skips both Molden and the legacy meta-Lowdin fields. MBIS and
+Hirshfeld can be substantially more expensive than Mulliken.
+
+A future OrbMol `latent_charge` export may be placed alongside these controls.
+It is **not** implemented by this change and should not be presented as an
+equivalent charge definition without validation.
 
 ## Submit (JSON)
 

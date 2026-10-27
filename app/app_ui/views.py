@@ -48,6 +48,11 @@ from app_core.config import (
 from app_core.job_runner import build_command, reload_job, stop_job, workflow_script_name
 from app_core.job_manifest import manifest_input, write_job_manifest
 from app_core.paths import APP_DIR, AUTO_REFRESH_SECONDS, SESSION_RETENTION_DAYS, WORKER_LOG_FILE, ensure_app_dirs
+from app_core.cross_backend_settings import (
+    CROSS_BACKEND_UI_DEFAULTS,
+    cross_backend_config_overrides,
+    selected_models as selected_cross_backend_models,
+)
 from app_core.population_settings import (
     POPULATION_UI_DEFAULTS,
     population_config_overrides,
@@ -259,6 +264,7 @@ PATH_SUBMIT_DEFAULTS = {
     "pick_optpoints_on": True,
     "save_fig_on": True,
     **POPULATION_UI_DEFAULTS,
+    **CROSS_BACKEND_UI_DEFAULTS,
     **MODULE_DEFAULTS,
 }
 
@@ -274,6 +280,7 @@ CONCAT_SUBMIT_DEFAULTS = {
     "save_fig_on": True,
     "pick_optpoints_on": False,
     **POPULATION_UI_DEFAULTS,
+    **CROSS_BACKEND_UI_DEFAULTS,
     **MODULE_DEFAULTS,
 }
 
@@ -306,6 +313,7 @@ def path_submit_state_keys(session_id: str) -> dict[str, str]:
         "save_fig_on": f"{session_id}_savefig",
     }
     keys.update(prefixed_state_keys(session_id, list(POPULATION_UI_DEFAULTS)))
+    keys.update(prefixed_state_keys(session_id, list(CROSS_BACKEND_UI_DEFAULTS)))
     keys.update(prefixed_state_keys(path_prefix, list(MODULE_DEFAULTS)))
     return keys
 
@@ -325,6 +333,7 @@ def concat_submit_state_keys(session_id: str) -> dict[str, str]:
         "pick_optpoints_on": f"{prefix}_pick_optpoints",
     }
     keys.update(prefixed_state_keys(prefix, list(POPULATION_UI_DEFAULTS)))
+    keys.update(prefixed_state_keys(prefix, list(CROSS_BACKEND_UI_DEFAULTS)))
     keys.update(prefixed_state_keys(prefix, list(MODULE_DEFAULTS)))
     return keys
 
@@ -1804,6 +1813,7 @@ def render_workflow_preview_dialog(
     orbmol_version: str,
     alpb_solvent: str,
     population_settings: dict[str, object],
+    cross_backend_settings: dict[str, object],
 ) -> None:
     summary_cols = st.columns(3)
     with summary_cols[0]:
@@ -1937,6 +1947,13 @@ def render_workflow_preview_dialog(
     )
     render_workflow_preview_step(
         10,
+        "Cross-backend MLIP Delta E",
+        bool(selected_cross_backend_models(cross_backend_settings)),
+        t("PET-OMol evaluates the completed Primary OrbMol energy series, without replacing the original results."),
+        "cross_backend.csv" if selected_cross_backend_models(cross_backend_settings) else "",
+    )
+    render_workflow_preview_step(
+        11,
         "Figure and final logs",
         save_fig_on,
         t('Controlled by `SAVE_FIG_ON`. Save the profile figure and logs at the end.'),
@@ -1954,6 +1971,7 @@ def render_concat_workflow_preview_dialog(
     pick_optpoints_on: bool,
     save_fig_on: bool,
     population_settings: dict[str, object],
+    cross_backend_settings: dict[str, object],
 ) -> None:
     summary_cols = st.columns(3)
     with summary_cols[0]:
@@ -2018,11 +2036,68 @@ def render_concat_workflow_preview_dialog(
     )
     render_workflow_preview_step(
         8,
+        "Cross-backend MLIP Delta E",
+        bool(selected_cross_backend_models(cross_backend_settings)),
+        t("PET-OMol evaluates the completed Primary OrbMol energy series, without replacing the original results."),
+        "cross_backend.csv" if selected_cross_backend_models(cross_backend_settings) else "",
+    )
+    render_workflow_preview_step(
+        9,
         "Figure and final logs",
         save_fig_on,
         t('Controlled by `SAVE_FIG_ON`. Save the profile figure and logs at the end.'),
         "fig_result.png / timing.log / molscout.log" if save_fig_on else "timing.log / molscout.log",
     )
+
+
+def render_cross_backend_settings(prefix: str, *, eligible: bool = True) -> dict[str, object]:
+    """Optional secondary MLIP single points, independent of the Primary path."""
+    values: dict[str, object] = {}
+    with st.expander(t("Cross-backend MLIP Delta E (optional)"), expanded=False):
+        st.caption(t(
+            "Evaluate existing Primary OrbMol Delta E structures with PET-OMol-S/L. "
+            "PET is vacuum-only; an ALPB Primary is not a like-for-like energy model."
+        ))
+        cols = st.columns(2)
+        for col, field, label in (
+            (cols[0], "cross_pet_omol_s", "PET-OMol-S"),
+            (cols[1], "cross_pet_omol_l", "PET-OMol-L"),
+        ):
+            key = f"{prefix}_{field}"
+            values[field] = col.checkbox(
+                label, key=key, disabled=not eligible,
+                **widget_default_kwargs(key, value=False),
+            )
+        cols = st.columns(2)
+        precision_key = f"{prefix}_cross_precision"
+        source_key = f"{prefix}_cross_source"
+        values["cross_precision"] = cols[0].selectbox(
+            t("PET inference precision"),
+            ["float32", "float64"],
+            format_func=lambda value: "FP32 (highest)" if value == "float32" else "FP64",
+            key=precision_key,
+            disabled=not eligible,
+            **selectbox_default_kwargs(precision_key, ["float32", "float64"], "float32"),
+        )
+        source_options = ["auto", "optpoints", "initial_path"]
+        source_labels = {
+            "auto": t("Auto: optpoints if available, otherwise Primary path"),
+            "optpoints": t("Optimized points only"),
+            "initial_path": t("Primary path trajectory"),
+        }
+        values["cross_source"] = cols[1].selectbox(
+            t("Comparison structures"),
+            source_options,
+            format_func=lambda value: source_labels[value],
+            key=source_key,
+            disabled=not eligible,
+            **selectbox_default_kwargs(source_key, source_options, "auto"),
+        )
+        if not eligible:
+            st.caption(t("Available only for OrbMol Primary calculations (not MF-SCAN or figure refresh)."))
+        else:
+            st.caption(t("Both models are OFF by default; results are saved to cross_backend.csv."))
+    return values
 
 
 def render_population_output_settings(prefix: str) -> dict[str, object]:
@@ -3331,6 +3406,10 @@ def render_job_submission(session: dict) -> None:
             key=save_fig_key,
             **widget_default_kwargs(save_fig_key, value=True),
         )
+        cross_backend_settings = render_cross_backend_settings(
+            session_id,
+            eligible=method == "orbmol" and not mf_scan_active and preset != "Figure refresh only",
+        )
 
         st.space("small")
         with st.container(horizontal=True, horizontal_alignment="right"):
@@ -3346,6 +3425,7 @@ def render_job_submission(session: dict) -> None:
     if save_defaults_pressed:
         try:
             population_config_overrides(population_settings)
+            cross_backend_config_overrides(cross_backend_settings)
         except ValueError as exc:
             st.error(str(exc))
             return
@@ -3367,6 +3447,7 @@ def render_job_submission(session: dict) -> None:
                 "temp": float(temp),
                 "result_name": result_name,
                 **population_settings,
+                **cross_backend_settings,
                 "refine_input_on": bool(refine_input_on),
                 "pick_optpoints_on": bool(pick_optpoints_on),
                 "save_fig_on": bool(save_fig_on),
@@ -3399,6 +3480,7 @@ def render_job_submission(session: dict) -> None:
             orbmol_version=str(orbmol_version),
             alpb_solvent=str(alpb_solvent),
             population_settings=population_settings,
+            cross_backend_settings=cross_backend_settings,
         )
         return
 
@@ -3408,8 +3490,10 @@ def render_job_submission(session: dict) -> None:
     errors: list[str] = []
     try:
         population_overrides = population_config_overrides(population_settings)
+        cross_backend_overrides = cross_backend_config_overrides(cross_backend_settings)
     except ValueError as exc:
         population_overrides = {}
+        cross_backend_overrides = {}
         errors.append(str(exc))
     if not method:
         errors.append(t('Method is required.'))
@@ -3422,6 +3506,9 @@ def render_job_submission(session: dict) -> None:
     )
     if alpb_solvent != "None" and method != "orbmol" and not mf_scan_active:
         errors.append("Add ALPB solvent is only available when Method is 'orbmol'. Select 'None' or choose 'orbmol'.")
+    if selected_cross_backend_models(cross_backend_settings):
+        if method != "orbmol" or mf_scan_active or preset == "Figure refresh only":
+            errors.append("PET-OMol cross-check requires a regular OrbMol Primary Delta E series.")
     try:
         scan_indices = parse_int_list(str(module_settings["scan_indices_text"]))
     except ValueError:
@@ -3645,6 +3732,7 @@ def render_job_submission(session: dict) -> None:
         "OPT_OPTPOINTS_AGAIN_ON": bool(module_settings["opt_optpoints_again_on"]),
         "FIXED_ATOMS": fixed_atoms,
         **population_overrides,
+        **cross_backend_overrides,
     }
 
     job_root = job_dir(session_id, job["job_id"])
@@ -3868,6 +3956,10 @@ def render_concat_submission(session: dict) -> None:
             key=pick_optpoints_key,
             **widget_default_kwargs(pick_optpoints_key, value=False),
         )
+        cross_backend_settings = render_cross_backend_settings(
+            f"{session_id}_cat",
+            eligible=method == "orbmol" and not bool(do_opt),
+        )
         module_settings = render_module_settings(f"{session_id}_cat", include_initial_path_method=False)
 
         st.space("small")
@@ -3884,6 +3976,7 @@ def render_concat_submission(session: dict) -> None:
     if save_defaults_pressed:
         try:
             population_config_overrides(population_settings)
+            cross_backend_config_overrides(cross_backend_settings)
         except ValueError as exc:
             st.error(str(exc))
             return
@@ -3906,6 +3999,7 @@ def render_concat_submission(session: dict) -> None:
                 "temp": float(temp),
                 "result_name": result_name,
                 **population_settings,
+                **cross_backend_settings,
                 "save_fig_on": bool(save_fig_on),
                 "pick_optpoints_on": bool(pick_optpoints_on),
             },
@@ -3922,6 +4016,7 @@ def render_concat_submission(session: dict) -> None:
             pick_optpoints_on=bool(pick_optpoints_on),
             save_fig_on=bool(save_fig_on),
             population_settings=population_settings,
+            cross_backend_settings=cross_backend_settings,
         )
         return
 
@@ -3931,8 +4026,10 @@ def render_concat_submission(session: dict) -> None:
     errors: list[str] = []
     try:
         population_overrides = population_config_overrides(population_settings)
+        cross_backend_overrides = cross_backend_config_overrides(cross_backend_settings)
     except ValueError as exc:
         population_overrides = {}
+        cross_backend_overrides = {}
         errors.append(str(exc))
     if not method:
         errors.append(t('Method is required.'))
@@ -3941,6 +4038,11 @@ def render_concat_submission(session: dict) -> None:
     effective_method = "orbmol+alpb" if method == "orbmol" and alpb_solvent != "None" else method
     if alpb_solvent != "None" and method != "orbmol":
         errors.append("Add ALPB solvent is only available when Method is 'orbmol'. Select 'None' or choose 'orbmol'.")
+    if selected_cross_backend_models(cross_backend_settings):
+        if method != "orbmol" or bool(do_opt):
+            errors.append("PET-OMol CAT cross-check requires OrbMol and structure optimization OFF.")
+        if cross_backend_settings.get("cross_source") == "optpoints":
+            errors.append("Concatenation has no optpoints pair; use auto or initial_path.")
     try:
         fixed_atoms = parse_int_list(str(module_settings["fixed_atoms_text"]))
     except ValueError:
@@ -4103,6 +4205,7 @@ def render_concat_submission(session: dict) -> None:
         "FIXED_ATOMS": fixed_atoms,
         "PYSCF_CONFIG_FILE": str(pyscf_config_path),
         **population_overrides,
+        **cross_backend_overrides,
     }
 
     stdout_log = job_root / "stdout.log"

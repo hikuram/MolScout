@@ -13,6 +13,7 @@ torch>=2.12.0
 # Electronic structure and optimization
 cyipopt>=1.6.1
 orb-models>=0.7.0
+upet==0.3.1  # Optional PET-OMol cross-backend evaluator (lazy runtime import)
 pydmf>=1.2.1
 pyscf>=2.13.0
 pyscf-dispersion

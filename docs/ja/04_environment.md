@@ -45,7 +45,7 @@ pip install streamlit "chemiscope[streamlit]"
 
 ## 3. 参照 package versions
 
-v0.4.5 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
+v0.4.6 の compatibility target は以下です。production image の rebuild 後に full backend verification を再実行してください。
 
 | Package | Version |
 |---|---:|

@@ -42,6 +42,12 @@ POPULATION_HIRSHFELD_XC: str = "PBE"           # Neutral-atom reference density
 # False (default): original export contract remains intact.
 POPULATION_FAST_EXPORT: bool = False
 
+# Optional secondary MLIP single-point check of an existing Primary Delta E
+# series (never part of Primary path search/optimization).  Empty = disabled.
+CROSS_BACKEND_MODELS: list[str] = []  # "pet-omol-s", "pet-omol-l"
+CROSS_BACKEND_PRECISION: str = "float32"  # "float32" or "float64"
+CROSS_BACKEND_SOURCE: str = "auto"  # "auto" (optpoints preferred), "optpoints", "initial_path"
+
 # OrbMol settings
 ORBMOL_VERSION: str = "v2" # "v1", "v2"
 
