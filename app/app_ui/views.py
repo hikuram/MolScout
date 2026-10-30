@@ -290,7 +290,18 @@ def session_submit_defaults(session: dict, section: str) -> dict[str, object]:
     if not isinstance(defaults, dict):
         return {}
     section_defaults = defaults.get(section, {})
-    return dict(section_defaults) if isinstance(section_defaults, dict) else {}
+    if not isinstance(section_defaults, dict):
+        return {}
+    result = dict(section_defaults)
+    # One-time compatibility for defaults saved by the previous two-checkbox UI.
+    # If both were checked, prefer the new explicit OFF default rather than
+    # arbitrarily choosing S or L.
+    if "cross_model" not in result:
+        old_s = result.get("cross_pet_omol_s") is True
+        old_l = result.get("cross_pet_omol_l") is True
+        if old_s != old_l:
+            result["cross_model"] = "pet-omol-s" if old_s else "pet-omol-l"
+    return result
 
 
 def prefixed_state_keys(prefix: str, names: list[str]) -> dict[str, str]:
@@ -2050,7 +2061,9 @@ def render_concat_workflow_preview_dialog(
     )
 
 
-def render_cross_backend_settings(prefix: str, *, eligible: bool = True) -> dict[str, object]:
+def render_cross_backend_settings(
+    prefix: str, *, eligible: bool = True, allow_optpoints: bool = True
+) -> dict[str, object]:
     """Optional secondary MLIP single points, independent of the Primary path."""
     values: dict[str, object] = {}
     with st.expander(t("Cross-backend MLIP Delta E (optional)"), expanded=False):
@@ -2058,16 +2071,19 @@ def render_cross_backend_settings(prefix: str, *, eligible: bool = True) -> dict
             "Evaluate existing Primary OrbMol Delta E structures with PET-OMol-S/L. "
             "PET is vacuum-only; an ALPB Primary is not a like-for-like energy model."
         ))
-        cols = st.columns(2)
-        for col, field, label in (
-            (cols[0], "cross_pet_omol_s", "PET-OMol-S"),
-            (cols[1], "cross_pet_omol_l", "PET-OMol-L"),
-        ):
-            key = f"{prefix}_{field}"
-            values[field] = col.checkbox(
-                label, key=key, disabled=not eligible,
-                **widget_default_kwargs(key, value=False),
-            )
+        model_key = f"{prefix}_cross_model"
+        model_options = ["none", "pet-omol-s", "pet-omol-l"]
+        model_labels = {
+            "none": t("None (default)"),
+            "pet-omol-s": "PET-OMol-S",
+            "pet-omol-l": "PET-OMol-L",
+        }
+        values["cross_model"] = st.radio(
+            t("Evaluation model"), model_options,
+            format_func=lambda value: model_labels[value], horizontal=True,
+            key=model_key, disabled=not eligible,
+            **selectbox_default_kwargs(model_key, model_options, "none"),
+        )
         cols = st.columns(2)
         precision_key = f"{prefix}_cross_precision"
         source_key = f"{prefix}_cross_source"
@@ -2079,12 +2095,19 @@ def render_cross_backend_settings(prefix: str, *, eligible: bool = True) -> dict
             disabled=not eligible,
             **selectbox_default_kwargs(precision_key, ["float32", "float64"], "float32"),
         )
-        source_options = ["auto", "optpoints", "initial_path"]
+        source_options = (
+            ["auto", "optpoints", "initial_path", "both"]
+            if allow_optpoints else ["auto", "initial_path"]
+        )
         source_labels = {
             "auto": t("Auto: optpoints if available, otherwise Primary path"),
             "optpoints": t("Optimized points only"),
             "initial_path": t("Primary path trajectory"),
+            "both": t("Both (Primary path + optpoints)"),
         }
+        # A saved standard-job "both" selection is not valid for Concatenation.
+        if source_key in st.session_state and st.session_state[source_key] not in source_options:
+            st.session_state[source_key] = "auto"
         values["cross_source"] = cols[1].selectbox(
             t("Comparison structures"),
             source_options,
@@ -2096,7 +2119,7 @@ def render_cross_backend_settings(prefix: str, *, eligible: bool = True) -> dict
         if not eligible:
             st.caption(t("Available only for OrbMol Primary calculations (not MF-SCAN or figure refresh)."))
         else:
-            st.caption(t("Both models are OFF by default; results are saved to cross_backend.csv."))
+            st.caption(t("No PET model is selected by default; results are saved to cross_backend.csv."))
     return values
 
 
@@ -3959,6 +3982,7 @@ def render_concat_submission(session: dict) -> None:
         cross_backend_settings = render_cross_backend_settings(
             f"{session_id}_cat",
             eligible=method == "orbmol" and not bool(do_opt),
+            allow_optpoints=False,
         )
         module_settings = render_module_settings(f"{session_id}_cat", include_initial_path_method=False)
 
@@ -4041,8 +4065,8 @@ def render_concat_submission(session: dict) -> None:
     if selected_cross_backend_models(cross_backend_settings):
         if method != "orbmol" or bool(do_opt):
             errors.append("PET-OMol CAT cross-check requires OrbMol and structure optimization OFF.")
-        if cross_backend_settings.get("cross_source") == "optpoints":
-            errors.append("Concatenation has no optpoints pair; use auto or initial_path.")
+        if cross_backend_settings.get("cross_source") in {"optpoints", "both"}:
+            errors.append("Concatenation has no evaluated optpoints pair; use auto or initial_path.")
     try:
         fixed_atoms = parse_int_list(str(module_settings["fixed_atoms_text"]))
     except ValueError:

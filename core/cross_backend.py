@@ -21,7 +21,7 @@ from utils import log
 PET_OMOL_MODELS = ("pet-omol-s", "pet-omol-l")
 PET_OMOL_VERSION = "1.0.0"
 SUPPORTED_PRECISIONS = ("float32", "float64")
-SUPPORTED_SOURCES = ("auto", "optpoints", "initial_path")
+SUPPORTED_SOURCES = ("auto", "optpoints", "initial_path", "both")
 PRIMARY_DELTA_COLUMN = "Delta E vs. reactant [kcal/mol]"
 PRIMARY_ENERGY_COLUMN = "energy [eV]"
 
@@ -38,11 +38,11 @@ def validate_settings(models: object, precision: object, source: object) -> list
     if precision not in SUPPORTED_PRECISIONS:
         raise CrossBackendConfigError("CROSS_BACKEND_PRECISION must be float32 or float64.")
     if source not in SUPPORTED_SOURCES:
-        raise CrossBackendConfigError("CROSS_BACKEND_SOURCE must be auto, optpoints, or initial_path.")
+        raise CrossBackendConfigError("CROSS_BACKEND_SOURCE must be auto, optpoints, initial_path, or both.")
     return [model for model in PET_OMOL_MODELS if model in models]
 
 
-def select_primary_series(config: object) -> tuple[Path, Path, str]:
+def select_primary_series(config: object, *, source_override: str | None = None) -> tuple[Path, Path, str]:
     """Locate matching trajectory/CSV files without deriving energies from XYZ.
 
     The optpoints CSV contains its own single-point primary energies, whereas
@@ -58,7 +58,11 @@ def select_primary_series(config: object) -> tuple[Path, Path, str]:
         raise CrossBackendConfigError("MF-SCAN contains DFT anchors, not a homogeneous Primary MLIP Delta E series.")
 
     method = str(getattr(config, "INIT_PATH_METHOD", "")).upper()
-    source = str(getattr(config, "CROSS_BACKEND_SOURCE", "auto"))
+    source = source_override if source_override is not None else str(getattr(config, "CROSS_BACKEND_SOURCE", "auto"))
+    if source == "both":
+        raise CrossBackendConfigError("Use select_primary_series_pairs for both structure series.")
+    if method == "CAT" and source == "optpoints":
+        raise CrossBackendConfigError("Concatenation has no evaluated optpoints pair.")
     if method == "CAT" and bool(getattr(config, "REFINE_INPUT_ON", False)):
         raise CrossBackendConfigError(
             "CAT with structure optimization changes the primary energy geometries; "
@@ -86,6 +90,24 @@ def select_primary_series(config: object) -> tuple[Path, Path, str]:
     if not path_traj.is_file() or not path_csv.is_file():
         raise CrossBackendConfigError(f"Missing matched trajectory/CSV: {path_traj}, {path_csv}.")
     return path_traj, path_csv, "initial_path"
+
+
+def select_primary_series_pairs(config: object) -> list[tuple[Path, Path, str]]:
+    """Resolve and validate every requested series before any PET work starts.
+
+    Both keeps independent frame indices and Delta E reference energies for
+    the original path and its optpoints.  Missing optpoints is a hard error,
+    rather than silently returning an incomplete comparison.
+    """
+    source = str(getattr(config, "CROSS_BACKEND_SOURCE", "auto"))
+    if source != "both":
+        return [select_primary_series(config)]
+    if str(getattr(config, "INIT_PATH_METHOD", "")).upper() == "CAT":
+        raise CrossBackendConfigError("Both comparison series are unavailable for Concatenation.")
+    return [
+        select_primary_series(config, source_override="initial_path"),
+        select_primary_series(config, source_override="optpoints"),
+    ]
 
 
 def _read_snapshots(source_path: Path) -> list:
@@ -179,9 +201,14 @@ def compare_primary_with_pet(
     if not models:
         return None
 
-    source_traj, source_csv, series = select_primary_series(config)
-    frames = (snapshot_reader or _read_snapshots)(source_traj)
-    primary = _aligned_primary_data(pd.read_csv(source_csv), frames)
+    series_data = []
+    # Check *all* sources first.  A missing optpoints CSV must not cause
+    # a partial output labeled as a successful "both" comparison.
+    for source_traj, source_csv, series in select_primary_series_pairs(config):
+        frames = (snapshot_reader or _read_snapshots)(source_traj)
+        primary = _aligned_primary_data(pd.read_csv(source_csv), frames)
+        series_data.append((source_traj, source_csv, series, frames, primary))
+
     device = str(getattr(config, "DEVICE", "cuda"))
     precision = str(getattr(config, "CROSS_BACKEND_PRECISION", "float32"))
     charge, mult = int(getattr(config, "CHARGE", 0)), int(getattr(config, "MULT", 1))
@@ -189,9 +216,6 @@ def compare_primary_with_pet(
     primary_method = str(getattr(config, "CALC_TYPE", "orbmol")).lower()
     primary_alpb = primary_method == "orbmol+alpb"
     base = {
-        "series": series,
-        "source_traj": str(source_traj),
-        "source_csv": str(source_csv),
         "primary_method": primary_method,
         "primary_orbmol_version": str(getattr(config, "ORBMOL_VERSION", "v2")),
         "primary_energy_basis": "OrbMol + ALPB effective" if primary_alpb else "OrbMol vacuum",
@@ -204,67 +228,77 @@ def compare_primary_with_pet(
     rows: list[dict[str, object]] = []
     make_calculator = calculator_factory or _default_calculator_factory
 
+    # Load one PET model, evaluate all selected series, then release it.
+    # This also preserves the legacy JSON route which may select both S and L.
     for model in models:
         calculator = None
-        energies: list[float] = []
-        errors: list[str] = []
-        elapsed: list[float] = []
-        log("Info", f"Cross-backend: evaluating {model} {PET_OMOL_VERSION} on {len(frames)} {series} frames.")
+        load_error = ""
         try:
             calculator = make_calculator(model, precision, device)
         except Exception as exc:
-            message = f"{type(exc).__name__}: {exc}"
-            log("Warn", f"Cross-backend {model}: could not load model: {message}")
-            energies = [math.nan] * len(frames)
-            errors = [message] * len(frames)
-            elapsed = [math.nan] * len(frames)
-        else:
-            for idx, atoms in enumerate(frames):
-                probe = atoms.copy()  # no deepcopy of an attached Torch calculator
-                probe.info["charge"] = charge
-                probe.info["spin"] = mult
-                probe.info["spin_multiplicity"] = mult
-                probe.calc = calculator
-                start = perf_counter()
-                try:
-                    value = float(probe.get_potential_energy())
-                    if not math.isfinite(value):
-                        raise ValueError("Nonfinite PET energy")
-                    energies.append(value)
-                    errors.append("")
-                except Exception as exc:
-                    message = f"{type(exc).__name__}: {exc}"
-                    log("Warn", f"Cross-backend {model} frame {idx}: {message}")
-                    energies.append(math.nan)
-                    errors.append(message)
-                finally:
-                    elapsed.append(perf_counter() - start)
-                    probe.calc = None
+            load_error = f"{type(exc).__name__}: {exc}"
+            log("Warn", f"Cross-backend {model}: could not load model: {load_error}")
+
+        try:
+            for source_traj, source_csv, series, frames, primary in series_data:
+                energies: list[float] = []
+                errors: list[str] = []
+                elapsed: list[float] = []
+                log("Info", f"Cross-backend: evaluating {model} {PET_OMOL_VERSION} on {len(frames)} {series} frames.")
+                if load_error:
+                    energies = [math.nan] * len(frames)
+                    errors = [load_error] * len(frames)
+                    elapsed = [math.nan] * len(frames)
+                else:
+                    for idx, atoms in enumerate(frames):
+                        probe = atoms.copy()  # no deepcopy of an attached Torch calculator
+                        probe.info["charge"] = charge
+                        probe.info["spin"] = mult
+                        probe.info["spin_multiplicity"] = mult
+                        probe.calc = calculator
+                        start = perf_counter()
+                        try:
+                            value = float(probe.get_potential_energy())
+                            if not math.isfinite(value):
+                                raise ValueError("Nonfinite PET energy")
+                            energies.append(value)
+                            errors.append("")
+                        except Exception as exc:
+                            message = f"{type(exc).__name__}: {exc}"
+                            log("Warn", f"Cross-backend {model} {series} frame {idx}: {message}")
+                            energies.append(math.nan)
+                            errors.append(message)
+                        finally:
+                            elapsed.append(perf_counter() - start)
+                            probe.calc = None
+
+                # Each structure series uses its own frame 0 as reference.
+                ref_energy = energies[0]
+                for idx, energy in enumerate(energies):
+                    delta = (energy - ref_energy) * factor if math.isfinite(energy) and math.isfinite(ref_energy) else math.nan
+                    primary_delta = float(primary.iloc[idx][PRIMARY_DELTA_COLUMN])
+                    rows.append({
+                        **base,
+                        "series": series,
+                        "source_traj": str(source_traj),
+                        "source_csv": str(source_csv),
+                        "model": model,
+                        "# image": idx,
+                        "previous_#image": primary.iloc[idx].get("previous_#image", math.nan),
+                        "primary_energy_eV": float(primary.iloc[idx][PRIMARY_ENERGY_COLUMN]),
+                        "primary_deltaE_kcalmol": primary_delta,
+                        "energy_raw_eV": energy,
+                        "deltaE_kcalmol": delta,
+                        "deltaE_minus_primary_kcalmol": (
+                            delta - primary_delta if math.isfinite(delta) and not primary_alpb else math.nan
+                        ),
+                        "elapsed_s": elapsed[idx],
+                        "status": "ok" if not errors[idx] and math.isfinite(delta) else "error",
+                        "error": errors[idx] if errors[idx] else ("Reference frame unavailable" if not math.isfinite(delta) else ""),
+                    })
         finally:
             calculator = None
             _release_calculator(device)
-
-        ref_energy = energies[0]
-        for idx, energy in enumerate(energies):
-            delta = (energy - ref_energy) * factor if math.isfinite(energy) and math.isfinite(ref_energy) else math.nan
-            primary_delta = float(primary.iloc[idx][PRIMARY_DELTA_COLUMN])
-            row = {
-                **base,
-                "model": model,
-                "# image": idx,
-                "previous_#image": primary.iloc[idx].get("previous_#image", math.nan),
-                "primary_energy_eV": float(primary.iloc[idx][PRIMARY_ENERGY_COLUMN]),
-                "primary_deltaE_kcalmol": primary_delta,
-                "energy_raw_eV": energy,
-                "deltaE_kcalmol": delta,
-                "deltaE_minus_primary_kcalmol": (
-                    delta - primary_delta if math.isfinite(delta) and not primary_alpb else math.nan
-                ),
-                "elapsed_s": elapsed[idx],
-                "status": "ok" if not errors[idx] and math.isfinite(delta) else "error",
-                "error": errors[idx] if errors[idx] else ("Reference frame unavailable" if not math.isfinite(delta) else ""),
-            }
-            rows.append(row)
 
     output = Path(destination)
     output.parent.mkdir(parents=True, exist_ok=True)

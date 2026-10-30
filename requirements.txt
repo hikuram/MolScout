@@ -12,7 +12,10 @@ torch>=2.12.0
 
 # Electronic structure and optimization
 cyipopt>=1.6.1
-orb-models>=0.7.0
+# OrbMol main supports the nvalchemi 0.4.x runtime required by UPET 0.3.1.
+# Pin the tested commit after GPU validation, instead of tracking main forever.
+orb-models @ git+https://github.com/orbital-materials/orb-models.git@main
+nvalchemi-toolkit-ops==0.4.1
 upet==0.3.1  # Optional PET-OMol cross-backend evaluator (lazy runtime import)
 pydmf>=1.2.1
 pyscf>=2.13.0

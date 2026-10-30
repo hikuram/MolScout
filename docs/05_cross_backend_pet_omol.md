@@ -2,20 +2,23 @@
 
 This option adds **secondary single-point evaluations** to a finished MolScout
 Primary MLIP workflow. It never changes the Primary calculator, optimization,
-TS search, IRC, or existing `result.csv` values. Both PET models are **OFF** by
-default in **Submit > 6. Extra Workflow Options** and **New Concatenation >
+TS search, IRC, or existing `result.csv` values. PET model selection defaults to
+**None** in **Submit > 6. Extra Workflow Options** and **New Concatenation >
 5. Extra Workflow Options**.
 
 ## Configuration
 
 ```json
 {
-  "CROSS_BACKEND_MODELS": ["pet-omol-s", "pet-omol-l"],
+  "CROSS_BACKEND_MODELS": ["pet-omol-s"],
   "CROSS_BACKEND_PRECISION": "float32",
   "CROSS_BACKEND_SOURCE": "auto"
 }
 ```
 
+- Submit GUI: mutually exclusive **None / PET-OMol-S / PET-OMol-L** radio
+  buttons, with None the default.  Advanced JSON still accepts a list of
+  models, for future multiple-model evaluation.
 - Models: PET-OMol-S/L, pinned to **checkpoint version 1.0.0**, evaluated with
   **UPET 0.3.1** via `upet.ase.UPETCalculator(checkpoint_path=...)`.
 - Precision: `float32` (PyTorch matmul precision **highest**, default) or
@@ -23,8 +26,13 @@ default in **Submit > 6. Extra Workflow Options** and **New Concatenation >
 - Source: `auto` prefers evaluated `optpoints/optpoints.traj` and
   `optpoints/result_optpoints.csv` when present, otherwise uses the Primary
   input/path trajectory and its matching CSV. Explicit `optpoints` or
-  `initial_path` selection is also available. It does not run new structure
-  optimizations or reconstruct energies from individual XYZ files.
+  `initial_path`, or `both` selection is also available.  `both` requires an
+  evaluated optpoints pair and appends **both** complete series to the same
+  `cross_backend.csv` (distinguished by the `series` column). Each series
+  has its own frame-0 Delta E reference; the model is loaded only once for
+  both series. Concatenation offers no optpoints/both choice.
+  It does not run new structure optimizations or reconstruct energies from
+  individual XYZ files.
 - Only **Primary OrbMol / OrbMol+ALPB** Delta E series are eligible. MF-SCAN
   mixed DFT anchor trajectories, figure refresh, and CAT batches that optimize
   frame geometries are excluded, to avoid mismatched structures and energies.
@@ -37,7 +45,9 @@ default in **Submit > 6. Extra Workflow Options** and **New Concatenation >
 `cross_backend.csv` (separate from and non-destructive to Primary outputs):
 
 - One row per `model` and `# image`, including `source_traj`, `source_csv`,
-  `series`, and `previous_#image` (for optpoints).
+  `series`, and `previous_#image` (for optpoints).  When `both` is selected,
+  `# image` restarts at zero for each series; use `(series, model, # image)`
+  as the unique frame identifier.
 - `primary_energy_eV`, `primary_deltaE_kcalmol`: **existing** Primary values.
 - `energy_raw_eV`: PET model's raw total energy, recorded for provenance,
   **not** for absolute-energy comparisons against another model.
@@ -63,9 +73,12 @@ model even when later frames succeed.
 
 ## Docker / offline execution
 
-`requirements.txt` pins `upet==0.3.1`. The Dockerfile keeps the NGC Torch
-version constrained when installing other packages. By default it downloads
-PET-OMol-S/L v1.0.0 checkpoints during the image build (with
+`requirements.txt` pins `upet==0.3.1` and `nvalchemi-toolkit-ops==0.4.1`.
+It installs OrbMol from upstream `main`, since released OrbMol 0.7.0 has an
+incompatible nvalchemi 0.3.x requirement.  After a working GPU build, replace
+`@main` with that OrbMol Git commit to make future rebuilds reproducible.
+The Dockerfile keeps the NGC Torch version constrained when installing other
+packages. By default it downloads PET-OMol-S/L v1.0.0 checkpoints during the image build (with
 SHA-256 verification against the published Hugging Face artifacts) under:
 
 ```

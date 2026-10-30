@@ -315,5 +315,9 @@
   "{guide} → periodic PySCF anchor optimization": "{guide} → 一定間隔の PySCF anchor 最適化",
   "{scan_type} SCAN requires {expected_count} atom indices.": "{scan_type} SCAN では atom indices を {expected_count} 個指定してください。",
   "{size} exceeds the download limit for this page. Use the file directly from the data directory.": "{size}のため、この画面からのダウンロード対象外です。dataディレクトリ上の実体を利用してください。",
-  "👆 Select one or more jobs in the table above to view details.": "👆 詳細を見るには、上のテーブルで 1 件以上のジョブを選択してください。"
+  "👆 Select one or more jobs in the table above to view details.": "👆 詳細を見るには、上のテーブルで 1 件以上のジョブを選択してください。",
+  "Evaluation model": "評価モデル",
+  "None (default)": "なし（初期設定）",
+  "Both (Primary path + optpoints)": "両方（Primary経路＋optpoints）",
+  "No PET model is selected by default; results are saved to cross_backend.csv.": "PETモデルは初期OFFです。結果はcross_backend.csvへ保存します。"
 }

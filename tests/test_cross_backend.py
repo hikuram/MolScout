@@ -287,6 +287,119 @@ def test_invalid_core_settings_are_rejected(cross_module, models, precision, sou
         cross_module.validate_settings(models, precision, source)
 
 
+def test_both_series_one_model_one_load_independent_references(cross_module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source_files(tmp_path, optpoints=True)
+    # Two optpoints frames, with a separate Primary energy reference and IDs.
+    pd.DataFrame({
+        "# image": [0, 1],
+        "previous_#image": [2, 8],
+        "energy [eV]": [-13.0, -12.4],
+        "Delta E vs. reactant [kcal/mol]": [0, 0.6 * 23.0605],
+    }).to_csv(tmp_path / "optpoints/result_optpoints.csv", index=False)
+    before = {
+        path: (tmp_path / path).read_bytes()
+        for path in ("result.csv", "optpoints/result_optpoints.csv")
+    }
+    events = []
+    frames = {
+        "init_path.traj": [AtomsStub(i, source_calc=object()) for i in range(3)],
+        "optpoints/optpoints.traj": [AtomsStub(i + 10, source_calc=object()) for i in range(2)],
+    }
+    cfg = config(CROSS_BACKEND_MODELS=["pet-omol-s"], CROSS_BACKEND_SOURCE="both", PICK_OPTPOINTS_ON=True)
+    output = cross_module.compare_primary_with_pet(
+        cfg,
+        calculator_factory=make_factory(events),
+        snapshot_reader=lambda path: frames[str(path)],
+    )
+    df = pd.read_csv(output)
+    assert len(df) == 5
+    assert df["model"].eq("pet-omol-s").all()
+    assert df["series"].tolist() == ["initial_path"] * 3 + ["optpoints"] * 2
+    assert df["source_csv"].tolist() == ["result.csv"] * 3 + ["optpoints/result_optpoints.csv"] * 2
+    assert df["# image"].tolist() == [0, 1, 2, 0, 1]
+    assert df["previous_#image"].iloc[3:].tolist() == [2, 8]
+    assert df["deltaE_kcalmol"].iloc[[0, 3]].tolist() == pytest.approx([0, 0])
+    # Optpoint PET delta uses its *own* frame 0, never the initial path baseline.
+    assert df["deltaE_kcalmol"].iloc[4] == pytest.approx(.3 * 23.0605)
+    assert df["primary_deltaE_kcalmol"].iloc[4] == pytest.approx(.6 * 23.0605)
+    assert [e[:2] for e in events if e[0] == "load"] == [("load", "pet-omol-s")]
+    assert [e[2] for e in events if e[0] == "energy"] == [0, 1, 2, 10, 11]
+    for path, original in before.items():
+        assert (tmp_path / path).read_bytes() == original
+    assert all(frame.calc is not None for series in frames.values() for frame in series)
+
+
+def test_both_series_requires_complete_optpoints_pair(cross_module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source_files(tmp_path)
+    events = []
+    cfg = config(CROSS_BACKEND_SOURCE="both", PICK_OPTPOINTS_ON=True)
+    with pytest.raises(cross_module.CrossBackendConfigError, match="optpoints"):
+        run(cross_module, tmp_path, cfg, events)
+    assert not (tmp_path / "cross_backend.csv").exists()
+    assert not events
+
+
+def test_both_series_rejects_bad_optpoints_csv_without_partial_output(cross_module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source_files(tmp_path, optpoints=True)
+    data(tmp_path, path="optpoints/result_optpoints.csv", source_indexes=[1, 0, 2])
+    events = []
+    cfg = config(CROSS_BACKEND_SOURCE="both", PICK_OPTPOINTS_ON=True)
+    with pytest.raises(cross_module.CrossBackendConfigError, match="frame IDs"):
+        run(cross_module, tmp_path, cfg, events)
+    assert not (tmp_path / "cross_backend.csv").exists()
+    assert not events
+
+
+def test_both_series_does_not_share_failed_reference(cross_module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source_files(tmp_path, optpoints=True)
+    frames = {
+        "init_path.traj": [AtomsStub(i) for i in range(3)],
+        "optpoints/optpoints.traj": [AtomsStub(i + 10) for i in range(3)],
+    }
+    events = []
+    cfg = config(CROSS_BACKEND_SOURCE="both", PICK_OPTPOINTS_ON=True,
+                 CROSS_BACKEND_MODELS=["pet-omol-s"])
+    output = cross_module.compare_primary_with_pet(
+        cfg, calculator_factory=make_factory(events, failure="pet-omol-s"),
+        snapshot_reader=lambda path: frames[str(path)],
+    )
+    df = pd.read_csv(output)
+    assert df[df.series == "initial_path"]["deltaE_kcalmol"].isna().all()
+    assert df[df.series == "optpoints"]["status"].eq("ok").all()
+    assert df[df.series == "optpoints"]["deltaE_kcalmol"].iloc[0] == pytest.approx(0)
+    assert len([e for e in events if e[0] == "load"]) == 1
+
+
+def test_both_source_unavailable_for_concatenation(cross_module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source_files(tmp_path, optpoints=True)
+    with pytest.raises(cross_module.CrossBackendConfigError, match="Concatenation"):
+        run(cross_module, tmp_path, config(INIT_PATH_METHOD="CAT", CROSS_BACKEND_SOURCE="both"), [])
+
+
+def test_both_source_preserves_primary_alpb_distinction(cross_module, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    source_files(tmp_path, optpoints=True)
+    result = run(cross_module, tmp_path, config(CALC_TYPE="orbmol+alpb", PICK_OPTPOINTS_ON=True,
+                                                CROSS_BACKEND_SOURCE="both", CROSS_BACKEND_MODELS=["pet-omol-s"]), [])
+    df = pd.read_csv(result)
+    assert set(df["series"]) == {"initial_path", "optpoints"}
+    assert df["deltaE_minus_primary_kcalmol"].isna().all()
+    assert df["status"].eq("ok").all()
+
+
+def test_gui_radio_and_concat_source_selection():
+    ui = (ROOT / "app/app_ui/views.py").read_text()
+    assert 'values["cross_model"] = st.radio(' in ui
+    assert '"both": t("Both (Primary path + optpoints)")' in ui
+    assert 'allow_optpoints=False' in ui
+    assert 'if allow_optpoints else ["auto", "initial_path"]' in ui
+
+
 def test_ui_defaults_are_off_and_forwarded_as_config():
     assert cross_backend_config_overrides(CROSS_BACKEND_UI_DEFAULTS) == {
         "CROSS_BACKEND_MODELS": [],
@@ -295,16 +408,18 @@ def test_ui_defaults_are_off_and_forwarded_as_config():
     }
     selected = {
         **CROSS_BACKEND_UI_DEFAULTS,
-        "cross_pet_omol_s": True,
-        "cross_pet_omol_l": True,
+        "cross_model": "pet-omol-l",
         "cross_precision": "float64",
-        "cross_source": "initial_path",
+        "cross_source": "both",
     }
     assert cross_backend_config_overrides(selected) == {
-        "CROSS_BACKEND_MODELS": ["pet-omol-s", "pet-omol-l"],
+        "CROSS_BACKEND_MODELS": ["pet-omol-l"],
         "CROSS_BACKEND_PRECISION": "float64",
-        "CROSS_BACKEND_SOURCE": "initial_path",
+        "CROSS_BACKEND_SOURCE": "both",
     }
+    assert cross_backend_config_overrides({"cross_model": "pet-omol-s"})["CROSS_BACKEND_MODELS"] == ["pet-omol-s"]
+    with pytest.raises(ValueError, match="evaluation model"):
+        cross_backend_config_overrides({"cross_model": ["pet-omol-s", "pet-omol-l"]})
 
 
 def test_gui_and_core_are_wired_for_both_submit_flows():

@@ -12,9 +12,10 @@ MolScout は、反応経路探索と後続の分子計算を自動化するた�
 ## v0.4.6: PET-OMol ΔE 比較オプション
 
 Submit (6. Extra Workflow Options) と Concatenation (5. Extra Workflow Options) に
-**PET-OMol-S/L single-point ΔE** の追加比較を実装しました。両モデルは初期OFF。
-Primary OrbMol のエネルギー系列を再計算せず、同じ構造に PET を順次適用して
-`cross_backend.csv` に記録します。UPET 0.3.1、checkpoints v1.0.0。
+**PET-OMol-S/L single-point ΔE** の追加比較を実装しました。モデルは
+「なし／PET-OMol-S／PET-OMol-L」のラジオボタンで選択し、初期設定は「なし」です。
+Primary経路・optpoints・両方の構造系列を選択でき、両方の場合は系列ごとに独立した
+ΔE基準点を用いて同じ `cross_backend.csv` に記録します。UPET 0.3.1、checkpoints v1.0.0。
 FP32 highest が既定で、FP64 も選択可能です。
 詳しくは [docs/05_cross_backend_pet_omol.md](docs/05_cross_backend_pet_omol.md)。
 

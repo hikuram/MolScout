@@ -46,7 +46,7 @@ POPULATION_FAST_EXPORT: bool = False
 # series (never part of Primary path search/optimization).  Empty = disabled.
 CROSS_BACKEND_MODELS: list[str] = []  # "pet-omol-s", "pet-omol-l"
 CROSS_BACKEND_PRECISION: str = "float32"  # "float32" or "float64"
-CROSS_BACKEND_SOURCE: str = "auto"  # "auto" (optpoints preferred), "optpoints", "initial_path"
+CROSS_BACKEND_SOURCE: str = "auto"  # "auto" (optpoints preferred), "optpoints", "initial_path", "both"
 
 # OrbMol settings
 ORBMOL_VERSION: str = "v2" # "v1", "v2"

@@ -73,10 +73,11 @@ MolScout v0.4.5 requires Sella >= 2.6.0. Pre-2.6 Sella releases are not supporte
 ## v0.4.6: Optional PET-OMol Delta E cross-check
 
 **Submit > 6. Extra Workflow Options** (and Concatenation > 5) can now run
-PET-OMol-S and/or PET-OMol-L single-point evaluations on the **same structures**
-as an existing Primary OrbMol Delta E series. Both options default to **OFF**.
-The new `cross_backend.csv` retains Primary Delta E and stores each PET model's
-independently referenced Delta E; original result files remain unchanged.
+a single optional PET-OMol-S **or** PET-OMol-L single-point evaluation on
+an existing Primary OrbMol Delta E series. The radio selection defaults to **None**.
+The source can be the Primary path, optpoints, or **both**. The new
+`cross_backend.csv` identifies each series and uses its own Delta E baseline;
+original Primary result files remain unchanged.
 The integration pins UPET 0.3.1 and PET-OMol checkpoints v1.0.0, supports FP32
 (highest) / FP64 and needs an image rebuild to install models.
 [Details and limitations](docs/05_cross_backend_pet_omol.md).
