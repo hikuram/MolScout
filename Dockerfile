@@ -8,7 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CUPY_ACCELERATORS="cutensor,cub" \
     LD_LIBRARY_PATH="/opt/hpcx/ucx/lib:/opt/hpcx/ucc/lib:${LD_LIBRARY_PATH}"
 
-ARG GPU4PYSCF_REF=v1.9.0
+ARG GPU4PYSCF_REF=v1.9.3
 
 RUN echo "ttf-mscorefonts-installer msttcorefonts/accepted-mscorefonts-eula select true" \
         | debconf-set-selections \
@@ -44,7 +44,8 @@ RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
 # CUDA libraries used by GPU4PySCF.
 RUN python3 -m pip install --no-cache-dir \
         "cupy-cuda13x==14.1.1" \
-        "cutensor-cu13==2.7.0"
+        "cutensor-cu13==2.7.0" \
+        "gpu4pyscf-libxc-cuda13x>=0.9.0"
 
 # Make the cuTENSOR wheel library available to the system linker.
 RUN SITE_PACKAGES="$(python3 -c \
@@ -62,7 +63,7 @@ RUN git clone --depth 1 --branch "${GPU4PYSCF_REF}" \
         -B /opt/gpu4pyscf/build \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_CUDA_ARCHITECTURES="120-real" \
-        -DBUILD_LIBXC=ON \
+        -DBUILD_LIBXC=OFF \
     && cmake --build /opt/gpu4pyscf/build --parallel 4
 
 # Optional Skala exchange-correlation backend.
