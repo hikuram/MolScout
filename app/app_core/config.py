@@ -8,7 +8,7 @@ from pathlib import Path
 from .paths import CORE_DIR
 
 
-APP_VERSION = "0.4.6"
+APP_VERSION = "0.4.7"
 REPOSITORY_URL = "https://github.com/hikuram/MolScout/"
 
 
