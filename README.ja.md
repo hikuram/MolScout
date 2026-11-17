@@ -13,7 +13,6 @@ MolScout は、反応経路探索と後続の分子計算を自動化するた�
 
 - Skala CUDAを使用する場合、`PYTORCH_GPU_MEMORY_FRACTION`を正しく参照します。`None`なら制限しません。既定値0.50は変わりません。
 - PostgreSQL接続を各プロセスの小規模プール（最小1／最大4接続）で再利用します。各DB操作のコミット／ロールバック境界は変えません。
-- **trajectoryのCalculator再利用、PySCF開殻系のUKS選択は導入していません。** `write_energies(energy_recalc=True)`も既存の独立計算方式を維持します。
 - GPU4PySCFの計算設定とDockerfileは変更していません。`gpu4pyscf-libxc-cuda13x==0.8.1`の既存固定を維持します。
 
 ## v0.4.6: PET-OMol ΔE 比較オプション
