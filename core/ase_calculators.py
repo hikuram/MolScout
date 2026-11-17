@@ -125,18 +125,25 @@ def resolve_pyscf_profile(atoms, profile: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def configure_torch_gpu_memory_limit():
-    """Limit the PyTorch CUDA allocator to 50% of device memory."""
+    """Optionally cap the PyTorch CUDA allocator using workflow configuration."""
     global _TORCH_GPU_MEMORY_LIMIT_APPLIED
 
     if _TORCH_GPU_MEMORY_LIMIT_APPLIED or g.DEVICE != "cuda":
         return
+
+    # None disables the cap. Check before importing/initializing CUDA.
+    fraction = getattr(g, "PYTORCH_GPU_MEMORY_FRACTION", 0.50)
+    if fraction is None:
+        return
+    fraction = float(fraction)
+    if not 0.0 < fraction <= 1.0:
+        raise ValueError("PYTORCH_GPU_MEMORY_FRACTION must be > 0 and <= 1, or None")
 
     import torch
 
     if not torch.cuda.is_available():
         return
 
-    fraction = 0.50
     device = torch.cuda.current_device()
     torch.cuda.set_per_process_memory_fraction(fraction, device=device)
 
