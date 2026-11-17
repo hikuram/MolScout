@@ -2,10 +2,15 @@
 
 [English](README.md)
 
-Current application version: **v0.4.6**
+Current application version: **v0.4.7**
 Repository: <https://github.com/hikuram/MolScout/>
 
 `app/` directory には、MolScout job の投入、queue 管理、monitoring、停止、archive 作成を行う Streamlit front end が含まれます。本 application は共有 remote use を想定しており、単一の worker が queued calculations を順番に実行します。
+
+## v0.4.7: 保守更新（2項目のみ）
+
+- Skala用CUDA PyTorchメモリ制限に`PYTORCH_GPU_MEMORY_FRACTION`を反映し、`None`で制限を無効化します。
+- PostgreSQL接続をプロセス単位でプール化し、トランザクションの範囲を維持します。
 
 ## v0.4.6: PET-OMol-S/L を使う ΔE 比較 (任意)
 
