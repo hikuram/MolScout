@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
+import atexit
+import os
 import threading
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 
 import psycopg
 from psycopg.types.json import Jsonb
+from psycopg_pool import ConnectionPool
 
 _SCHEMA_LOCK = threading.Lock()
 _SCHEMA_READY = False
+_POOL_LOCK = threading.Lock()
+_POOL: ConnectionPool | None = None
+_POOL_PID: int | None = None
 
 _SCHEMA_STATEMENTS = (
     """
@@ -80,8 +87,42 @@ _ARTIFACT_COLUMNS = (
 )
 
 
-def _connect(*, autocommit: bool = False) -> psycopg.Connection:
-    return psycopg.connect(autocommit=autocommit)
+def _close_pool(owner_pid: int, pool: ConnectionPool) -> None:
+    """Only close a pool from its owning process (not a forked child)."""
+    if os.getpid() == owner_pid:
+        pool.close()
+
+
+def _get_pool() -> ConnectionPool:
+    """Get a small, lazy, thread-safe PostgreSQL pool local to this process."""
+    global _POOL, _POOL_PID
+    pid = os.getpid()
+    if _POOL is None or _POOL_PID != pid:
+        with _POOL_LOCK:
+            if _POOL is None or _POOL_PID != pid:
+                # Each Streamlit/worker process owns its own pool. psycopg's
+                # ConnectionPool is safe for concurrent Streamlit fragments.
+                pool = ConnectionPool(
+                    conninfo="",  # Respect PGHOST/PGUSER/PGDATABASE etc.
+                    min_size=1,
+                    max_size=4,
+                    open=True,
+                    timeout=15.0,
+                )
+                _POOL = pool
+                _POOL_PID = pid
+                atexit.register(_close_pool, pid, pool)
+    return _POOL
+
+
+@contextmanager
+def _connect(*, autocommit: bool = False) -> Iterator[psycopg.Connection]:
+    """Borrow a connection; preserve commit/rollback and autocommit semantics."""
+    with _get_pool().connection() as connection:
+        # pool.connection() commits or rolls back when returning the connection.
+        # Set on every checkout because schema setup uses autocommit=True.
+        connection.autocommit = autocommit
+        yield connection
 
 
 def ensure_database() -> None:
