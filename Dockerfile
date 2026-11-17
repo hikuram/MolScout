@@ -45,7 +45,7 @@ RUN grep -v -E '^[[:space:]]*torch([<>=!~]|[[:space:]]|$)' \
 RUN python3 -m pip install --no-cache-dir \
         "cupy-cuda13x==14.1.1" \
         "cutensor-cu13==2.7.0" \
-        "gpu4pyscf-libxc-cuda13x>=0.9.0"
+        "gpu4pyscf-libxc-cuda13x==0.8.1"
 
 # Make the cuTENSOR wheel library available to the system linker.
 RUN SITE_PACKAGES="$(python3 -c \
