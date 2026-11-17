@@ -2,7 +2,7 @@
 
 [日本語](README.ja.md)
 
-Current application version: **v0.4.6**
+Current application version: **v0.4.7**
 Repository: <https://github.com/hikuram/MolScout/>
 
 MolScout is a Python toolkit for automating reaction-path searches and follow-up molecular calculations. It treats initial-path generation, transition-state optimization, intrinsic reaction coordinate calculations, vibrational analysis, thermochemical evaluation, and optional high-level energy refinement as a connected workflow.
@@ -69,6 +69,12 @@ pip install -r requirements.txt
 ```
 
 MolScout v0.4.5 requires Sella >= 2.6.0. Pre-2.6 Sella releases are not supported by the current AdaptiveIRC integration.
+
+## v0.4.7: Configuration and connection maintenance
+
+- Honor `PYTORCH_GPU_MEMORY_FRACTION` for optional Skala CUDA calculations. `None` disables the cap; the default remains 0.50.
+- Reuse PostgreSQL connections through a small per-process pool (min 1, max 4) without changing commit/rollback boundaries.
+- No changes to GPU4PySCF/Dockerfile. The existing `gpu4pyscf-libxc-cuda13x==0.8.1` pin remains.
 
 ## v0.4.6: Optional PET-OMol Delta E cross-check
 
