@@ -2,12 +2,19 @@
 
 [English](README.md)
 
-Current application version: **v0.4.6**
+Current application version: **v0.4.7**
 Repository: <https://github.com/hikuram/MolScout/>
 
 MolScout は、反応経路探索と後続の分子計算を自動化するための Python toolkit です。初期経路生成、transition-state optimization、intrinsic reaction coordinate 計算、vibrational analysis、熱化学量評価、および任意の高精度 energy refinement を一連の workflow として扱います。
 
 本リポジトリは、共有実行用の Streamlit application と、科学計算 workflow を格納する `core/` directory を中心に構成されています。従来の個別 workflow script は整理済みであり、workflow stage の選択は application wrapper と `core/default_config.py` によって制御します。
+
+## v0.4.7: 設定とDB接続の保守更新
+
+- Skala CUDAを使用する場合、`PYTORCH_GPU_MEMORY_FRACTION`を正しく参照します。`None`なら制限しません。既定値0.50は変わりません。
+- PostgreSQL接続を各プロセスの小規模プール（最小1／最大4接続）で再利用します。各DB操作のコミット／ロールバック境界は変えません。
+- **trajectoryのCalculator再利用、PySCF開殻系のUKS選択は導入していません。** `write_energies(energy_recalc=True)`も既存の独立計算方式を維持します。
+- GPU4PySCFの計算設定とDockerfileは変更していません。`gpu4pyscf-libxc-cuda13x==0.8.1`の既存固定を維持します。
 
 ## v0.4.6: PET-OMol ΔE 比較オプション
 
